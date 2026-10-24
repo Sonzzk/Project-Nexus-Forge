@@ -178,11 +178,19 @@ export const agentTables: ExportableTable[] = [
       note: z.string().max(1000),
       created_at: isoText,
       updated_at: isoText,
+      // Step 13. Defaults keep files exported before it importable. `requested_at` is not exported: an imported run never waits to start.
+      priority: z.enum(PRIORITIES).default('normal'),
+      model: z.string().max(200).default(''),
+      attempt: z.number().int().min(1).max(10).default(1),
+      retry_of: id.nullable().default(null),
+      route_json: z.string().max(10_000).nullable().default(null),
+      result: z.string().max(200_000).default(''),
     }),
     key: ['id'],
     parents: [
       { column: 'project_id', table: 'projects', parentColumn: 'id' },
       { column: 'task_id', table: 'tasks', parentColumn: 'id' },
+      { column: 'retry_of', table: 'agent_runs', parentColumn: 'id' },
     ],
     orderBy: 'created_at, step_index, id',
     // Only the implementer writes: a file that says another role can write is not a record this app made.

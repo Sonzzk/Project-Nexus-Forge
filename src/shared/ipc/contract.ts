@@ -13,7 +13,9 @@ import {
   PackRequestSchema,
   PackSummarySchema,
 } from '../context';
-import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import { ResourceReportSchema } from '../resources';
+import { RouteSchema } from '../routing';
 import {
   GENERATE_PURPOSES,
   GenerateResultSchema,
@@ -30,6 +32,7 @@ import { SETTING_KEYS, SettingsSchema } from '../settings';
 import {
   BreakdownSchema,
   MilestoneCreateSchema,
+  PRIORITIES,
   MilestonePatchSchema,
   MilestoneSchema,
   NoteSchema,
@@ -180,7 +183,7 @@ export const contract = {
   'risks:update': { request: RiskPatchSchema, response: RiskSchema },
   'risks:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.literal(true) }) },
   // Agent roles and run records. Nothing here launches an agent: a workflow becomes queued records, and the person can record
-  // how a run ended. Launching arrives with Steps 12 and 13.
+  // how a run ended. Starting a run goes through the queue channels below.
   'agents:roles': { request: noInput, response: z.array(AgentRoleSchema) },
   'agents:preview': { request: WorkflowRequestSchema, response: WorkflowPreviewSchema },
   'agents:queue': { request: WorkflowRequestSchema, response: z.array(RunSchema) },
@@ -190,6 +193,17 @@ export const contract = {
     request: z.strictObject({ runId: z.string().max(64), outcome: z.enum(['completed', 'failed', 'cancelled']), note: z.string().max(500) }),
     response: RunSchema,
   },
+  // The run queue (Step 13). The renderer names a run and, at most, a provider and model for it; main routes it, asks before
+  // a cloud send, and owns the program it starts. Runs that change files are refused until Step 15.
+  'queue:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: QueueViewSchema },
+  'queue:route': { request: z.strictObject({ runId: z.string().max(64), choice: ProviderChoiceSchema.optional() }), response: RouteSchema },
+  'queue:start': { request: z.strictObject({ runId: z.string().max(64), choice: ProviderChoiceSchema.optional() }), response: RunSchema },
+  'queue:cancel': { request: z.strictObject({ runId: z.string().max(64) }), response: RunSchema },
+  'queue:setPriority': { request: z.strictObject({ runId: z.string().max(64), priority: z.enum(PRIORITIES) }), response: RunSchema },
+  'queue:retry': { request: z.strictObject({ runId: z.string().max(64), choice: ProviderChoiceSchema.optional() }), response: RunSchema },
+  'queue:releaseLock': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ released: z.boolean() }) },
+  // A fresh look at CPU, RAM, GPU and running editors, with the local-inference verdict. Nothing is changed.
+  'resources:check': { request: noInput, response: ResourceReportSchema },
   // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
   // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.
   'providers:list': { request: noInput, response: z.array(ProviderStatusSchema) },
@@ -199,7 +213,8 @@ export const contract = {
   'providers:pull': { request: z.strictObject({ model: z.string().regex(MODEL_NAME) }), response: z.strictObject({ pulled: z.boolean() }) },
   'providers:cancel': { request: noInput, response: z.strictObject({ cancelled: z.boolean() }) },
   'providers:generate': {
-    request: z.strictObject({ choice: ProviderChoiceSchema, prompt: z.string().min(1).max(20_000), purpose: z.enum(GENERATE_PURPOSES) }),
+    // Agent runs only come from the queue, never from a page.
+    request: z.strictObject({ choice: ProviderChoiceSchema, prompt: z.string().min(1).max(20_000), purpose: z.enum(GENERATE_PURPOSES).exclude(['agent-run']) }),
     response: GenerateResultSchema,
   },
   'providers:suggestSteps': {
@@ -210,6 +225,7 @@ export const contract = {
     request: z.strictObject({ projectId: z.string().max(64), choice: ProviderChoiceSchema, docType: z.enum(DOC_TYPES), instruction: z.string().max(2000), currentText: z.string().max(100_000) }),
     response: GenerateResultSchema,
   },
+  'providers:unload': { request: z.strictObject({ model: z.string().regex(MODEL_NAME) }), response: z.strictObject({ unloaded: z.literal(true) }) },
   // Data and backups. Backups are named by file name; export, import and restore choose files in native dialogs in main,
   // and anything that overwrites data or adds a project folder is confirmed there too.
   'storage:status': { request: noInput, response: StorageStatusSchema },

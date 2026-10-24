@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import { WORKFLOWS, RUN_STATE_LABELS, FINAL_RUN_STATES, type AgentRoleId, type AgentRun, type WorkflowId, type WorkflowPreview } from '@shared/agents';
 import { AGENT_ROLE_IDS } from '@shared/agents';
 import type { SerializedError } from '@shared/errors';
-import { featureById, stateLabel } from '@shared/feature-status';
 import { ROLE_LABELS, type Task } from '@shared/tasks';
 import { formatTime } from '../../lib/activity';
+import { useQueue } from '../../lib/queue';
+import { RunControls } from '../workbench/RunControls';
 
 type RoleInfo = { id: AgentRoleId; label: string; purpose: string; expectedOutput: string; writeCapable: boolean };
 
 /**
  * Agent work for one task (spec §11): the roles and what each may do, a workflow shown with its actions and providers
- * before anything exists, queued run records, and a prompt preview. Nothing here runs an agent; that arrives in Steps 12 and 13.
+ * before anything exists, queued run records, and a prompt preview. Runs start through the queue (RunControls), read-only
+ * until Step 15.
  */
 export function AgentsPanel({ task }: { task: Task }) {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
@@ -23,7 +25,7 @@ export function AgentsPanel({ task }: { task: Task }) {
   const [promptRole, setPromptRole] = useState<AgentRoleId>(AGENT_ROLE_IDS.find((r) => r === task.role) ?? 'planner');
   const [prompt, setPrompt] = useState<{ text: string; note: string } | undefined>();
   const [error, setError] = useState<SerializedError | undefined>();
-  const launch = featureById('action.run-agent');
+  const queue = useQueue(task.projectId);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +38,8 @@ export function AgentsPanel({ task }: { task: Task }) {
       cancelled = true;
     };
   }, [task.id, version]);
+  // A run changes state in main (started, held, finished): every such change is an agent activity event.
+  useEffect(() => window.api.on('activity:appended', (event) => event.kind.startsWith('agent.') && setVersion((n) => n + 1)), []);
 
   const request = { taskId: task.id, workflow, includeReviewer, includeQa };
   const role = roles.find((r) => r.id === promptRole);
@@ -46,8 +50,8 @@ export function AgentsPanel({ task }: { task: Task }) {
     <section aria-label="Agent work for this task">
       <h3>Agent work</h3>
       <p className="muted">
-        Roles and workflows are planned and recorded here. Running an agent arrives in Step 13, so nothing below starts a program or sends anything to a
-        provider.
+        Plan a workflow, save it as queued runs, then start each run. A run is routed to a provider first and shows where it goes and what it costs; anything
+        sent to a cloud service is confirmed in a separate window. Runs are read-only until Step 15. The AI Workbench shows the whole queue.
       </p>
       {error !== undefined && (
         <p role="alert">
@@ -169,9 +173,6 @@ export function AgentsPanel({ task }: { task: Task }) {
         >
           Save as queued runs
         </button>
-        <button type="button" className="btn" disabled title="Running agents is not built yet">
-          Run the workflow · {launch === undefined ? 'Upcoming' : (stateLabel(launch) ?? 'Upcoming')}
-        </button>
       </div>
       {plan !== undefined && (
         <ol className="rows" aria-label="Workflow plan">
@@ -196,16 +197,29 @@ export function AgentsPanel({ task }: { task: Task }) {
       <h3>Runs for this task</h3>
       {runs.length === 0 && <p className="empty">No runs recorded for this task.</p>}
       <ul className="rows" aria-label="Runs">
-        {runs.map((run) => (
+        {runs.map((stored) => {
+          const run = { ...stored, hold: queue.view?.runs.find((r) => r.id === stored.id)?.hold ?? '' };
+          const idle = run.state === 'queued' && run.requestedAt === null && run.hold === '';
+          return (
           <li key={run.id} className="backup-row">
             <span>
-              <strong>{ROLE_LABELS[run.role]}</strong> <span className="muted">· {run.writeCapable ? 'writes files' : 'read-only'}{run.providerId === '' ? '' : ` · ${run.providerId}`} · {formatTime(run.createdAt)}</span>
+              <strong>{ROLE_LABELS[run.role]}</strong> <span className="muted">· {run.writeCapable ? 'writes files' : 'read-only'}{run.providerId === '' ? '' : ` · ${run.providerId}`}{run.attempt > 1 ? ` · attempt ${run.attempt}` : ''} · {formatTime(run.createdAt)}</span>
+              {run.hold !== '' && <div role="note">{run.hold}</div>}
               {run.note !== '' && <div className="muted">{run.note}</div>}
+              {run.result !== '' && (
+                <details>
+                  <summary>Answer</summary>
+                  <pre className="diff">{run.result}</pre>
+                </details>
+              )}
             </span>
             <span className="badge" data-state={run.state}>
               {RUN_STATE_LABELS[run.state]}
             </span>
-            {FINAL_RUN_STATES.includes(run.state) ? (
+            <span>
+              <RunControls run={run} writesEnabled={queue.view?.writesEnabled ?? false} maxAttempts={queue.view?.maxAttempts ?? 1} onChanged={reload} onError={fail} />
+            </span>
+            {FINAL_RUN_STATES.includes(run.state) || !idle ? (
               <span />
             ) : (
               <span className="actions">
@@ -229,9 +243,9 @@ export function AgentsPanel({ task }: { task: Task }) {
                 ))}
               </span>
             )}
-            <span />
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );

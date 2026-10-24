@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { RoleId, Task } from './tasks';
+import { RouteSchema } from './routing';
+import { PRIORITIES, type RoleId, type Task } from './tasks';
 
-// Agent roles and workflows (spec §11). This step defines roles, run records, their visible states and the workflow
-// templates, and shows what a run would do and with which provider. Nothing here starts a program or calls a provider:
-// launching arrives with Steps 12 and 13.
+// Agent roles and workflows (spec §11): roles, run records, their visible states and the workflow templates, and what a run
+// would do and with which provider. Nothing here starts a program or calls a provider: the run queue (src/main/planning/queue.ts,
+// Step 13) does, for read-only runs only until Step 15.
 
 export const AGENT_ROLE_IDS = ['planner', 'implementer', 'reviewer', 'qa', 'docs', 'assets'] as const satisfies readonly Exclude<RoleId, ''>[];
 export type AgentRoleId = (typeof AGENT_ROLE_IDS)[number];
@@ -221,8 +222,8 @@ export const WorkflowPreviewSchema = z.object({
   label: z.string().max(80),
   description: z.string().max(400),
   steps: z.array(WorkflowStepViewSchema).max(10),
-  /** Always true in this step: no run can be launched yet. */
-  launchUnavailable: z.literal(true),
+  /** Always true until Step 15: read-only runs can start from the queue, runs that change project files cannot. */
+  writesUnavailable: z.literal(true),
 });
 export type WorkflowPreview = z.output<typeof WorkflowPreviewSchema>;
 
@@ -241,8 +242,43 @@ export const RunSchema = z.object({
   allowedNext: z.array(z.enum(RUN_STATES)).max(9),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+  /** Queue order (Step 13): higher first, then the earliest request. Starts as the task's priority. */
+  priority: z.enum(PRIORITIES),
+  model: z.string().max(200),
+  /** 1 for the first try; a retry is a new run with the next number, up to `routing.maxAttempts`. */
+  attempt: z.number().int().min(1).max(10),
+  retryOf: id.nullable(),
+  /** The routing decision of the last start, with its reasons and cost note. */
+  route: RouteSchema.nullable(),
+  /** What the provider answered (capped). Empty until a run finished with an answer. */
+  result: z.string().max(200_000),
+  /** When the person asked the queue to start it; null when it is not waiting to start. */
+  requestedAt: z.iso.datetime().nullable(),
+  /** Why a requested run is waiting (a busy provider, the writer lock, the local-inference policy). Empty when it is not held. */
+  hold: z.string().max(600),
 });
 export type AgentRun = z.output<typeof RunSchema>;
+
+export const QueueEntrySchema = RunSchema.extend({ taskTitle: z.string().max(200) });
+export type QueueEntry = z.output<typeof QueueEntrySchema>;
+
+export const WriterLockSchema = z.object({
+  runId: id,
+  role: z.string().max(80),
+  acquiredAt: z.iso.datetime(),
+  /** The run that holds it is running now. False after a restart: the app could not see that writer end. */
+  active: z.boolean(),
+});
+
+export const QueueViewSchema = z.object({
+  /** Running and waiting runs first (in the order they will start), then queued ones, then the 20 most recent finished runs. */
+  runs: z.array(QueueEntrySchema).max(500),
+  lock: WriterLockSchema.nullable(),
+  /** Until Step 15 no run may change project files (CLAUDE.md, "Rules that span steps"). */
+  writesEnabled: z.boolean(),
+  maxAttempts: z.number().int().min(1).max(10),
+});
+export type QueueView = z.output<typeof QueueViewSchema>;
 
 export const PromptPreviewSchema = z.object({
   role: z.enum(AGENT_ROLE_IDS),

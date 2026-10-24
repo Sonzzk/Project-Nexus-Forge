@@ -38,7 +38,25 @@ describe('settings schema', () => {
       'providers.ollamaContextLength': 0,
       'tasks.requirePlanApproval': false,
       'tasks.view': 'board',
+      'routing.profile': 'balanced',
+      'routing.localModel': '',
+      'routing.roleOverrides': {},
+      'routing.maxAttempts': 3,
+      'inference.mode': 'allow-local',
+      'inference.minFreeVramMiB': 6144,
+      'inference.minFreeRamMiB': 8192,
+      'inference.holdForHeavyApps': true,
+      'inference.keepAliveMinutes': 5,
+      'inference.monitorIntervalSeconds': 30,
     });
+  });
+
+  it('refuses role overrides for unknown roles or providers, and model names that could be flags', () => {
+    expect(SettingsSchema.shape['routing.roleOverrides'].safeParse({ planner: { provider: 'ollama', model: 'qwen3:8b' } }).success).toBe(true);
+    expect(SettingsSchema.shape['routing.roleOverrides'].safeParse({ root: { provider: 'ollama', model: '' } }).success).toBe(false);
+    expect(SettingsSchema.shape['routing.roleOverrides'].safeParse({ planner: { provider: 'gpt', model: '' } }).success).toBe(false);
+    expect(SettingsSchema.shape['routing.roleOverrides'].safeParse({ planner: { provider: 'claude-code', model: '--dangerously-skip-permissions' } }).success).toBe(false);
+    expect(SettingsSchema.shape['routing.localModel'].safeParse('-rf').success).toBe(false);
   });
 
   it('has no secret fields: credentials never live in ordinary settings', () => {

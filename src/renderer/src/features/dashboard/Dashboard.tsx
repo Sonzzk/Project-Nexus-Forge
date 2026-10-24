@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Handoff } from '@shared/context';
 import { STATUS_TEXT } from '@shared/providers';
-import { STATUS_LABELS } from '@shared/tasks';
+import { ROLE_LABELS, STATUS_LABELS } from '@shared/tasks';
+import { RUN_STATE_LABELS } from '@shared/agents';
+import { useQueue } from '../../lib/queue';
 import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
 import { useNav } from '../../app/navigation';
@@ -17,7 +19,6 @@ const CARDS = FEATURES.filter((feature) => feature.kind === 'card');
 const EMPTY_TEXT: Record<string, string> = {
   'card.projects': 'Registered projects, their type and status appear here.',
   'card.current-task': 'The current task and milestone, with progress from stored tasks only.',
-  'card.agent-sessions': 'Running and recent agent sessions appear here.',
   'card.git': 'Branch, uncommitted changes and recent commits of the selected project.',
   'card.tests': 'The latest test run and its result.',
   'card.handoff': 'The most recent session handoff for the selected project.',
@@ -102,6 +103,40 @@ function GitCard() {
         </p>
       )}
       {git !== undefined && <GitFacts git={git} />}
+    </section>
+  );
+}
+
+/** Running and waiting runs of the selected project, straight from the queue (spec §5: active agent sessions). */
+function AgentSessionsCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const { view, error } = useQueue(selected?.id);
+  const busy = (view?.runs ?? []).filter((run) => run.requestedAt !== null || run.hold !== '' || run.state === 'planning' || run.state === 'running');
+  return (
+    <section className="card" aria-label="Active agent sessions" data-feature="card.agent-sessions">
+      <div className="card__head">
+        <h2>Active agent sessions</h2>
+        <button type="button" className="btn" onClick={() => go('workbench')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its agent runs.</p>}
+      {error !== undefined && (
+        <p role="alert">
+          {error.message} {error.hint}
+        </p>
+      )}
+      {view !== undefined && busy.length === 0 && <p className="empty">No agent run is running or waiting.</p>}
+      {view?.lock != null && !view.lock.active && <p role="note">A writer lock from an interrupted run is still held. Check it on the AI Workbench.</p>}
+      <ul className="rows" aria-label="Running and waiting runs">
+        {busy.slice(0, 6).map((run) => (
+          <li key={run.id}>
+            <strong>{ROLE_LABELS[run.role]}</strong> <span className="muted">· {run.taskTitle} · {RUN_STATE_LABELS[run.state]}</span>
+            {run.hold !== '' && <div className="muted">{run.hold}</div>}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -340,6 +375,7 @@ export function Dashboard() {
         <ProjectsCard />
         <GitCard />
         <HandoffCard />
+        <AgentSessionsCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

@@ -5,7 +5,8 @@ import type { Logger } from '../logging';
 import type { GenerateRequest, ProviderAdapter, ProviderOutput } from './types';
 
 // Ollama over its documented local HTTP API (docs.ollama.com/api, checked 2026-10-24): GET /api/version, GET /api/tags,
-// POST /api/show, GET /api/ps, POST /api/generate (NDJSON stream; closing the request stops generation) and POST /api/pull.
+// POST /api/show, GET /api/ps, POST /api/generate (NDJSON stream; closing the request stops generation; keep_alive 0 unloads a
+// model, docs.ollama.com/faq checked 2026-10-24) and POST /api/pull.
 // Only this module uses `fetch` (ARCHITECTURE.md section 4). The endpoint is configurable, but a non-loopback host needs an
 // explicit setting, because a prompt sent there leaves this PC.
 
@@ -15,6 +16,8 @@ export interface OllamaOptions {
   timeoutMs: () => number;
   /** 0 means the model's own default. */
   contextLength: () => number;
+  /** Minutes a model stays loaded after a request (documented keep_alive); 0 unloads it right after the answer. */
+  keepAliveMinutes: () => number;
   /** The Ollama program, if installed, to tell "installed but not running" from "not installed". */
   locateProgram: () => string | undefined;
   logger: Logger;
@@ -218,6 +221,13 @@ export function createOllamaAdapter(options: OllamaOptions): ProviderAdapter {
       await response.text();
     },
 
+    // A request with only the model and keep_alive 0 unloads it (docs.ollama.com/faq).
+    async unload(model, signal) {
+      const response = await call('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, keep_alive: 0 }) }, SHORT_TIMEOUT_MS, signal);
+      if (!response.ok) throw await httpError(response, '/api/generate');
+      await response.text();
+    },
+
     async pull(model, signal, onProgress) {
       const response = await call('/api/pull', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, stream: true }) }, 6 * 60 * 60 * 1000, signal);
       if (!response.ok) throw await httpError(response, '/api/pull');
@@ -233,7 +243,8 @@ export function createOllamaAdapter(options: OllamaOptions): ProviderAdapter {
     async generate(request: GenerateRequest): Promise<ProviderOutput> {
       if (request.model === '') throw new AppError('INVALID_INPUT', 'Choose an Ollama model first.', { hint: 'Pick one from the list on the Integrations page.' });
       const num_ctx = options.contextLength();
-      const body = { model: request.model, prompt: request.prompt, stream: true, ...(num_ctx > 0 ? { options: { num_ctx } } : {}) };
+      const keep = options.keepAliveMinutes();
+      const body = { model: request.model, prompt: request.prompt, stream: true, keep_alive: keep === 0 ? 0 : `${keep}m`, ...(num_ctx > 0 ? { options: { num_ctx } } : {}) };
       const response = await call('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, options.timeoutMs(), request.signal);
       if (!response.ok) throw await httpError(response, '/api/generate');
       let text = '';

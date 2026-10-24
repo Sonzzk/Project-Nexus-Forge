@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEATURES, isUsable } from '@shared/feature-status';
 import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
 import { allowedNext } from '@shared/tasks';
+import type { AgentRun } from '@shared/agents';
 import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
 import { attachProviders, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
@@ -815,22 +816,112 @@ describe('agent work on a task', () => {
     expect(fake.calls.filter((c) => c.channel === 'agents:preview').at(-1)?.input).toEqual({ taskId: 'task-1', workflow: 'implement', includeReviewer: true, includeQa: false });
   });
 
-  it('saves queued run records, lists them, lets you record an outcome by hand, and never offers to run them', async () => {
-    const { user, panel } = await openTask();
-    const run = within(panel).getByRole('button', { name: /^Run the workflow/ });
-    expect((run as HTMLButtonElement).disabled).toBe(true);
-    expect(run.textContent).toContain('Upcoming · Step 13');
-    expect(within(panel).getByRole<HTMLButtonElement>("button", { name: "Save as queued runs" }).disabled).toBe(true); // show the plan first
+  it('saves queued run records, starts a read-only run after showing its route, keeps writers disabled, and records an outcome by hand', async () => {
+    const { user, panel } = await openTask({ provider: 'Claude Code', complexity: 'l' });
+    expect(within(panel).queryByRole('button', { name: /^Run the workflow/ })).toBeNull();
+    expect(within(panel).getByRole<HTMLButtonElement>('button', { name: 'Save as queued runs' }).disabled).toBe(true); // show the plan first
     await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
     await user.click(await within(panel).findByRole('button', { name: 'Save as queued runs' }));
     const runs = await within(panel).findByRole('list', { name: 'Runs' });
     expect(within(runs).getAllByRole('listitem')).toHaveLength(2);
     expect(within(runs).getAllByText('Queued')).toHaveLength(2);
-    expect(within(runs).queryByRole('button', { name: /start|launch|^run/i })).toBeNull();
+    const writer = within(runs).getByRole<HTMLButtonElement>('button', { name: /^Start · Upcoming · Step 15/ });
+    expect(writer.disabled).toBe(true);
 
-    await user.click(within(runs).getByRole('button', { name: 'Record Planner / architect run as completed' }));
+    await user.click(within(runs).getByRole('button', { name: 'Start the Planner / architect run…' }));
+    const route = await within(panel).findByLabelText('Routing decision');
+    expect(route.textContent).toContain('Claude Code');
+    expect(route.textContent).toContain('Balanced');
+    expect(route.textContent).toMatch(/not free/);
+    expect(fake.calls.filter((c) => c.channel === 'queue:start')).toHaveLength(0); // nothing starts before the second click
+    await user.click(within(panel).getByRole('button', { name: 'Start' }));
     expect(await within(panel).findByText('Completed')).toBeTruthy();
-    expect(within(panel).queryByRole('button', { name: 'Record Planner / architect run as completed' })).toBeNull();
+    expect(fake.calls.find((c) => c.channel === 'queue:start')?.input).toEqual({ runId: 'run-101' });
+    expect(within(panel).getByText(/Plan: 1\. Add the jump input/)).toBeTruthy();
+
+    await user.click(within(runs).getByRole('button', { name: 'Record Implementer run as cancelled' }));
+    expect(await within(panel).findByText('Cancelled')).toBeTruthy();
+  });
+
+  it('a run can be sent to another provider for this run only', async () => {
+    const { user, panel } = await openTask({ provider: 'Claude Code', complexity: 'l' });
+    await user.selectOptions(within(panel).getByLabelText('Template'), 'plan');
+    await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
+    await user.click(await within(panel).findByRole('button', { name: 'Save as queued runs' }));
+    await user.click(await within(panel).findByRole('button', { name: 'Start the Planner / architect run…' }));
+    await user.selectOptions(await within(panel).findByLabelText('Provider for this run'), 'ollama');
+    await waitFor(() => expect(within(panel).getByLabelText('Routing decision').textContent).toContain('Ollama (local)'));
+    expect(within(panel).getByLabelText('Routing decision').textContent).toContain('cannot read the project files');
+    await user.click(within(panel).getByRole('button', { name: 'Start' }));
+    expect(fake.calls.find((c) => c.channel === 'queue:start')?.input).toEqual({ runId: 'run-101', choice: { provider: 'ollama', model: '' } });
+    expect(await within(panel).findByText('Completed')).toBeTruthy();
+  });
+});
+
+describe('the AI Workbench', () => {
+  const openWorkbench = async (seed: Parameters<typeof attachPlanning>[1] = {}) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    const planning = attachPlanning(fake, seed);
+    const providers = attachProviders(fake);
+    await user.click(within(sidebar()).getByRole('button', { name: /^AI Workbench/ }));
+    await screen.findByRole('heading', { name: 'AI Workbench' });
+    return { user, planning, providers };
+  };
+  const queuedRun = (id: string, overrides: Partial<AgentRun> = {}): AgentRun => ({
+    id, projectId: 'project-1', taskId: 'task-1', workflowId: 'wf', stepIndex: 0, role: 'planner', providerId: '', state: 'queued', writeCapable: false, optional: false, note: '',
+    allowedNext: ['planning', 'running', 'cancelled'], createdAt: '2026-10-24T05:00:00.000Z', updatedAt: '2026-10-24T05:00:00.000Z',
+    priority: 'normal', model: '', attempt: 1, retryOf: null, route: null, result: '', requestedAt: null, hold: '', ...overrides,
+  });
+
+  it('lists the queue with what holds each run, changes a priority, and cancels a waiting run', async () => {
+    const { user, planning } = await openWorkbench({
+      tasks: [sampleTask(1, { title: 'Add jumping' })],
+      runs: [queuedRun('run-1', { requestedAt: '2026-10-24T05:01:00.000Z', hold: 'Held by the local-inference policy: Unreal Editor is running, so local models wait instead of competing for the GPU.' }), queuedRun('run-2', { role: 'implementer', writeCapable: true, stepIndex: 1 })],
+    });
+    const queue = await screen.findByRole('list', { name: 'Queued and running' });
+    expect(await within(queue).findByText(/Unreal Editor is running/)).toBeTruthy();
+    expect(within(queue).getByRole<HTMLButtonElement>('button', { name: /^Start · Upcoming · Step 15/ }).disabled).toBe(true);
+    await user.selectOptions(within(queue).getByLabelText('Priority of the Planner / architect run for Add jumping'), 'critical');
+    expect(planning.runs[0]?.priority).toBe('critical');
+    await user.click(within(queue).getByRole('button', { name: 'Cancel the Planner / architect run' }));
+    expect(await screen.findByRole('list', { name: 'Recently finished' })).toBeTruthy();
+    expect(planning.runs[0]?.state).toBe('cancelled');
+  });
+
+  it('shows an interrupted writer lock and releases it only through main', async () => {
+    const { user, planning } = await openWorkbench({ tasks: [sampleTask(1)], lock: { runId: 'run-9', role: 'Implementer', acquiredAt: '2026-10-24T04:00:00.000Z', active: false } });
+    expect(await screen.findByText(/That run was interrupted/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Release the lock…' }));
+    expect(fake.calls.some((c) => c.channel === 'queue:releaseLock')).toBe(true);
+    expect(planning.lock).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/That run was interrupted/)).toBeNull());
+  });
+
+  it('saves the routing profile, the local model and a provider for one role', async () => {
+    const { user } = await openWorkbench();
+    await user.selectOptions(screen.getByLabelText('Profile'), 'local-first');
+    expect(fake.settings['routing.profile']).toBe('local-first');
+    expect(screen.getByText(/Ollama on this PC for every role/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'llama3.2:1b' })).toBeTruthy());
+    await user.selectOptions(screen.getByLabelText('Local model (Ollama)'), 'llama3.2:1b');
+    expect(fake.settings['routing.localModel']).toBe('llama3.2:1b');
+    await user.selectOptions(screen.getByLabelText('Provider for the Code reviewer role'), 'codex');
+    expect(fake.settings['routing.roleOverrides']).toEqual({ reviewer: { provider: 'codex', model: '' } });
+  });
+
+  it('switches to Prioritize Game Performance, checks the resources and unloads a loaded model', async () => {
+    const { user, providers } = await openWorkbench();
+    providers.models = [sampleModel('qwen3:8b', { loaded: true })];
+    providers.resources = { ...providers.resources, verdict: { allowed: false, blocks: ['Prioritize Game Performance is on, so local models do not start.'], warnings: ['Free VRAM could not be measured.'] } };
+    await user.selectOptions(screen.getByLabelText('Mode'), 'prioritize-game');
+    expect(fake.settings['inference.mode']).toBe('prioritize-game');
+    await user.click(screen.getByRole('button', { name: 'Check resources now' }));
+    const now = await screen.findByLabelText('Resources now');
+    expect(within(now).getByText('Local models wait')).toBeTruthy();
+    expect(within(now).getByText(/Prioritize Game Performance is on/)).toBeTruthy();
+    expect(within(now).getByText(/NVIDIA GeForce RTX 3060: 8\.2 GB VRAM free of 12\.0 GB/)).toBeTruthy();
+    await user.click(within(now).getByRole('button', { name: 'Unload qwen3:8b' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:unload')?.input).toEqual({ model: 'qwen3:8b' });
   });
 });
 

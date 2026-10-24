@@ -11,6 +11,8 @@ export interface GenerateRequest {
   cwd?: string;
   signal: AbortSignal;
   onText?: (text: string) => void;
+  /** The queued run that owns the program; the process runner refuses a second program for the same owner. */
+  ownerId?: string;
 }
 
 export interface ProviderOutput {
@@ -25,6 +27,8 @@ export interface ProviderAdapter {
   readonly capabilities: Capabilities;
   models?(): Promise<OllamaModel[]>;
   warmUp?(model: string, signal: AbortSignal): Promise<void>;
+  /** Releases a loaded model (Ollama: keep_alive 0). */
+  unload?(model: string, signal: AbortSignal): Promise<void>;
   pull?(model: string, signal: AbortSignal, onProgress: (progress: PullProgress) => void): Promise<void>;
   generate(request: GenerateRequest): Promise<ProviderOutput>;
 }

@@ -7,7 +7,7 @@ import { copyFixture, snapshotTree } from '../helpers/tree';
 import { removeTempDirs } from '../helpers/temp';
 import { launchApp } from './launch';
 
-// Step 11: roles and workflows in the real app. Workflows become queued records; nothing is started, nothing is sent, and
+// Step 11: roles and workflows in the real app. Workflows become queued records; nothing is started here, nothing is sent, and
 // the project folder is untouched.
 
 let userData: string;
@@ -64,8 +64,9 @@ test('a workflow is shown with its providers and blockers, needs the plan approv
     const runs = panel.getByRole('list', { name: 'Runs' });
     await expect(runs.getByRole('listitem')).toHaveCount(2);
     await expect(runs).toContainText('Queued');
-    await expect(panel.getByRole('button', { name: /^Run the workflow/ })).toBeDisabled();
-    await expect(panel.getByRole('button', { name: /^Run the workflow/ })).toContainText('Upcoming · Step 13');
+    // The implementer would change files, which waits for Step 15; nothing was started here.
+    await expect(runs.getByRole('button', { name: /^Start · Upcoming · Step 15/ })).toBeDisabled();
+    await expect(runs.getByRole('button', { name: 'Start the Planner / architect run…' })).toBeEnabled();
     expect(snapshotTree(folder)).toEqual(before);
   } finally {
     await app.close();

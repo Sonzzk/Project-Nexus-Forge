@@ -17,6 +17,8 @@ import {
 } from '@shared/agents';
 import type { PromptPreviewSchema } from '@shared/agents';
 import { AppError } from '@shared/errors';
+import { RouteSchema, type Route } from '@shared/routing';
+import type { Priority } from '@shared/tasks';
 import type { z } from 'zod';
 import type { ActivityLog } from '../logging';
 import type { ProjectRegistry } from '../projects';
@@ -26,7 +28,7 @@ import type { TaskService } from './tasks';
 
 // Agent roles and run records (spec §11). This module only keeps records: a workflow turns into queued run records, and a
 // run's state follows the table in src/shared/agents.ts. It starts nothing, calls no provider and imports no process code
-// (a test checks that); a person records the outcome of work done by hand, and the runner of Steps 12 and 13 will drive the rest.
+// (a test checks that); a person records the outcome of work done by hand, and the run queue (queue.ts) drives the rest.
 
 export interface AgentService {
   roles(): Omit<AgentRole, 'promptTemplate'>[];
@@ -35,11 +37,12 @@ export interface AgentService {
   /** Saves the included steps as queued run records. Reviewer and QA steps are only included when asked for. */
   createWorkflow(request: WorkflowRequest): AgentRun[];
   runs(taskId: string): AgentRun[];
+  get(runId: string): AgentRun;
   /** The text a provider would receive for this role and task. Nothing is sent. */
   prompt(taskId: string, role: AgentRoleId): z.output<typeof PromptPreviewSchema>;
   /** The person records how a run ended (work done by hand, or abandoned). Not a launch. */
   recordOutcome(runId: string, outcome: 'completed' | 'failed' | 'cancelled', note: string): AgentRun;
-  /** The runner's move along the state table (Step 13 uses it). Enforces the permission rules. */
+  /** The queue's move along the state table. Enforces the permission rules. */
   transition(runId: string, state: RunState, reason: string): AgentRun;
 }
 
@@ -52,7 +55,7 @@ export interface AgentServiceOptions {
   newId?: () => string;
 }
 
-interface Row {
+export interface RunRow {
   id: string;
   project_id: string;
   task_id: string | null;
@@ -66,9 +69,26 @@ interface Row {
   note: string;
   created_at: string;
   updated_at: string;
+  priority: Priority;
+  model: string;
+  attempt: number;
+  retry_of: string | null;
+  route_json: string | null;
+  result: string;
+  requested_at: string | null;
 }
 
-const toRun = (r: Row): AgentRun => ({
+const routeOf = (json: string | null): Route | null => {
+  if (json === null) return null;
+  try {
+    const parsed = RouteSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : null; // an unreadable record (an edited import) shows as "no route", never as a guess
+  } catch {
+    return null;
+  }
+};
+
+export const runFromRow = (r: RunRow): AgentRun => ({
   id: r.id,
   projectId: r.project_id,
   taskId: r.task_id,
@@ -83,6 +103,14 @@ const toRun = (r: Row): AgentRun => ({
   allowedNext: [...RUN_TRANSITIONS[r.state]],
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  priority: r.priority,
+  model: r.model,
+  attempt: r.attempt,
+  retryOf: r.retry_of,
+  route: routeOf(r.route_json),
+  result: r.result,
+  requestedAt: r.requested_at,
+  hold: '',
 });
 
 export function createAgentService(options: AgentServiceOptions): AgentService {
@@ -90,8 +118,8 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   const now = options.now ?? (() => new Date());
   const newId = options.newId ?? randomUUID;
 
-  const row = (id: string): Row => {
-    const found = db.get<Row>('SELECT * FROM agent_runs WHERE id = ?', id);
+  const row = (id: string): RunRow => {
+    const found = db.get<RunRow>('SELECT * FROM agent_runs WHERE id = ?', id);
     if (found === undefined) throw new AppError('NOT_FOUND', 'That run does not exist.', { hint: 'It may have been deleted. Reload the list.' });
     return found;
   };
@@ -107,7 +135,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
       workflow: template.id,
       label: template.label,
       description: template.description,
-      launchUnavailable: true,
+      writesUnavailable: true,
       steps: template.steps.map((step) => {
         const role = step.role === undefined ? undefined : roleById(step.role);
         const included = !step.optional || (step.role === 'reviewer' && request.includeReviewer) || (step.role === 'qa' && request.includeQa);
@@ -134,7 +162,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     db.run('INSERT INTO agent_run_transitions (id, run_id, from_state, to_state, at, reason) VALUES (?, ?, ?, ?, ?, ?)', newId(), runId, from, to, stamp, reason);
   };
 
-  const move = (current: Row, state: RunState, reason: string): AgentRun => {
+  const move = (current: RunRow, state: RunState, reason: string): AgentRun => {
     const stamp = now().toISOString();
     db.transaction(() => {
       db.run('UPDATE agent_runs SET state = ?, note = CASE WHEN ? = \'\' THEN note ELSE ? END, updated_at = ? WHERE id = ?', state, reason, reason, stamp, current.id);
@@ -148,7 +176,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
       ...(current.task_id === null ? {} : { taskId: current.task_id }),
       details: { runId: current.id, from: current.state, to: state },
     });
-    return toRun(row(current.id));
+    return runFromRow(row(current.id));
   };
 
   return {
@@ -170,8 +198,8 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         steps.map((step, index) => {
           const id = newId();
           db.run(
-            'INSERT INTO agent_runs (id, project_id, task_id, workflow_id, step_index, role, provider_id, state, write_capable, optional, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, \'queued\', ?, ?, \'\', ?, ?)',
-            id, task.projectId, task.id, workflowId, index, step.role as AgentRoleId, step.provider, step.writeCapable ? 1 : 0, step.optional ? 1 : 0, stamp, stamp,
+            'INSERT INTO agent_runs (id, project_id, task_id, workflow_id, step_index, role, provider_id, state, write_capable, optional, note, created_at, updated_at, priority) VALUES (?, ?, ?, ?, ?, ?, ?, \'queued\', ?, ?, \'\', ?, ?, ?)',
+            id, task.projectId, task.id, workflowId, index, step.role as AgentRoleId, step.provider, step.writeCapable ? 1 : 0, step.optional ? 1 : 0, stamp, stamp, task.priority,
           );
           record(id, '', 'queued', 'Queued from the workflow plan', stamp);
           return id;
@@ -184,12 +212,14 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         projectId: task.projectId,
         taskId: task.id,
       });
-      return ids.map((id) => toRun(row(id)));
+      return ids.map((id) => runFromRow(row(id)));
     },
+
+    get: (runId) => runFromRow(row(runId)),
 
     runs(taskId) {
       tasks.get(taskId);
-      return db.all<Row>('SELECT * FROM agent_runs WHERE task_id = ? ORDER BY created_at, step_index, id', taskId).map(toRun);
+      return db.all<RunRow>('SELECT * FROM agent_runs WHERE task_id = ? ORDER BY created_at, step_index, id', taskId).map(runFromRow);
     },
 
     prompt(taskId, roleId) {
@@ -200,7 +230,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         role: role.id,
         writeCapable: role.writeCapable,
         prompt: renderPrompt(role, task, projectName(task.projectId)),
-        note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Step 13.',
+        note: 'This is the text a provider would receive for this task. Nothing is sent until you start a run from the queue.',
       };
     },
 

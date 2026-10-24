@@ -7,6 +7,20 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 13 · Agent orchestration and routing (2026-10-24, tag `step-13`)
+
+### Added
+- Routing profiles Manual, Local First, Balanced (the default) and Cloud First, with a provider and model per role and a per-run choice. Every route says why it was chosen and what it costs as far as the app can know; no cloud route is called free.
+- The run queue: start a queued run after seeing its route; runs wait in priority order with a visible reason (busy provider, workflow order, the writer lock, the local-inference policy); one run per provider, read-only runs of other providers alongside; duplicate launches refused; cancel stops only the program the app started for that run.
+- A per-project single-writer lock that survives restarts and is released by the person after an interrupted run. Runs that change files stay disabled until Step 15.
+- Bounded retries as new attempts (at most `routing.maxAttempts`), with the confirmation before a cloud send saying when it repeats a failed call or escalates to a more expensive route. No automatic retries.
+- A resource monitor (CPU and RAM from the system, GPU and VRAM from nvidia-smi when present, Unreal Editor and Blender from tasklist) and the local-inference policy: Prioritize Game Performance or Allow Local Inference, free VRAM and RAM minimums, a hold while heavy editors run, Ollama keep-alive and Unload. Nothing is ever closed or stopped for it.
+- The AI Workbench page, Start, Cancel and Try again in a task's Agent work, and the dashboard card Active agent sessions.
+- Schema v8, nine channels, ten settings. Decision D-038, known issue KI-017.
+
+### Changed
+- Provider requests are limited to one per provider instead of one in total; the Stop button on a page no longer reaches queued runs.
+
 ## Step 12 · Provider integrations (2026-10-24, tag `step-12`)
 
 ### Added

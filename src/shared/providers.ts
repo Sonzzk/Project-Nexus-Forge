@@ -76,7 +76,7 @@ export type OllamaModel = z.output<typeof OllamaModelSchema>;
 
 export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/;
 
-export const GENERATE_PURPOSES = ['connection-test', 'task-breakdown', 'document-draft', 'project-session'] as const;
+export const GENERATE_PURPOSES = ['connection-test', 'task-breakdown', 'document-draft', 'project-session', 'agent-run'] as const;
 export type GeneratePurpose = (typeof GENERATE_PURPOSES)[number];
 
 export const ProviderChoiceSchema = z.strictObject({

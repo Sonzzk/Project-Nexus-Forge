@@ -10,7 +10,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
-async function setup(overrides: { endpoint?: string; allowRemote?: boolean; timeoutMs?: number; contextLength?: number; program?: string | undefined } = {}) {
+async function setup(overrides: { endpoint?: string; allowRemote?: boolean; timeoutMs?: number; contextLength?: number; keepAliveMinutes?: number; program?: string | undefined } = {}) {
   const server = await startFixtureServer();
   servers.push(server);
   server.route('GET /api/version', (_req, res) => sendJson(res, fixture('ollama', 'version.json')));
@@ -22,6 +22,7 @@ async function setup(overrides: { endpoint?: string; allowRemote?: boolean; time
     allowRemote: () => overrides.allowRemote ?? false,
     timeoutMs: () => overrides.timeoutMs ?? 5000,
     contextLength: () => overrides.contextLength ?? 0,
+    keepAliveMinutes: () => overrides.keepAliveMinutes ?? 5,
     locateProgram: () => ('program' in overrides ? overrides.program : 'C:\\Ollama\\ollama.exe'),
     logger: memoryLogger(),
   });
@@ -61,10 +62,10 @@ describe('Ollama: detection', () => {
     await closed.server.close();
     servers.length = 0;
     const base = { endpoint: address, timeoutMs: 1000 };
-    const installed = await createOllamaAdapter({ endpoint: () => base.endpoint, allowRemote: () => false, timeoutMs: () => 1000, contextLength: () => 0, locateProgram: () => 'C:\\Ollama\\ollama.exe', logger: memoryLogger() }).detect();
+    const installed = await createOllamaAdapter({ endpoint: () => base.endpoint, allowRemote: () => false, timeoutMs: () => 1000, contextLength: () => 0, keepAliveMinutes: () => 5, locateProgram: () => 'C:\\Ollama\\ollama.exe', logger: memoryLogger() }).detect();
     expect(installed).toMatchObject({ status: 'installed', message: 'Ollama is installed but not running.' });
     expect(installed.hint).toContain('Start Ollama');
-    const missing = await createOllamaAdapter({ endpoint: () => base.endpoint, allowRemote: () => false, timeoutMs: () => 1000, contextLength: () => 0, locateProgram: () => undefined, logger: memoryLogger() }).detect();
+    const missing = await createOllamaAdapter({ endpoint: () => base.endpoint, allowRemote: () => false, timeoutMs: () => 1000, contextLength: () => 0, keepAliveMinutes: () => 5, locateProgram: () => undefined, logger: memoryLogger() }).detect();
     expect(missing.status).toBe('not-installed');
     expect(missing.hint).toContain('never installs');
   });
@@ -115,7 +116,7 @@ describe('Ollama: models', () => {
 });
 
 describe('Ollama: generating', () => {
-  it('streams the answer, reports usage as the provider returned it, and sends only the model, the prompt and the stream flag', async () => {
+  it('streams the answer, reports usage as the provider returned it, and sends only the model, the prompt, the stream flag and the keep-alive setting', async () => {
     const { adapter, server } = await setup();
     server.route('POST /api/generate', (_req, res) => sendLines(res, fixture('ollama', 'generate-stream.ndjson')));
     const partial: string[] = [];
@@ -123,7 +124,7 @@ describe('Ollama: generating', () => {
     expect(result.text).toBe('Hello world');
     expect(partial).toEqual(['Hel', 'Hello ', 'Hello world']);
     expect(result.usage).toEqual({ inputCount: 12, outputCount: 3, costUsdEstimate: null });
-    expect(server.seen.find((s) => s.path === '/api/generate')?.body).toEqual({ model: 'llama3.2:1b', prompt: 'Say hello', stream: true });
+    expect(server.seen.find((s) => s.path === '/api/generate')?.body).toEqual({ model: 'llama3.2:1b', prompt: 'Say hello', stream: true, keep_alive: '5m' });
   });
 
   it('asks for the configured context length, and only when one is configured', async () => {
@@ -131,6 +132,13 @@ describe('Ollama: generating', () => {
     server.route('POST /api/generate', (_req, res) => sendLines(res, fixture('ollama', 'generate-stream.ndjson'), 0));
     await adapter.generate({ model: 'llama3.2:1b', prompt: 'p', signal: new AbortController().signal });
     expect(server.seen.find((s) => s.path === '/api/generate')?.body).toMatchObject({ options: { num_ctx: 16384 } });
+  });
+
+  it('a keep-alive of 0 minutes asks Ollama to unload the model right after the answer', async () => {
+    const { adapter, server } = await setup({ keepAliveMinutes: 0 });
+    server.route('POST /api/generate', (_req, res) => sendLines(res, fixture('ollama', 'generate-stream.ndjson'), 0));
+    await adapter.generate({ model: 'llama3.2:1b', prompt: 'p', signal: new AbortController().signal });
+    expect(server.seen.find((s) => s.path === '/api/generate')?.body).toMatchObject({ keep_alive: 0 });
   });
 
   it('says plainly when the model does not exist, when Ollama reports an error mid-stream, and when no model was chosen', async () => {
@@ -178,6 +186,13 @@ describe('Ollama: loading and downloading models', () => {
     server.route('POST /api/generate', (_req, res) => sendJson(res, '{"model":"llama3.2:1b","done":true}'));
     await adapter.warmUp?.('llama3.2:1b', new AbortController().signal);
     expect(server.seen.find((s) => s.path === '/api/generate')?.body).toEqual({ model: 'llama3.2:1b', keep_alive: '5m', stream: false });
+  });
+
+  it('unloading sends only the model with keep_alive 0, the documented way to release it', async () => {
+    const { adapter, server } = await setup();
+    server.route('POST /api/generate', (_req, res) => sendJson(res, '{"model":"llama3.2:1b","done":true,"done_reason":"unload"}'));
+    await adapter.unload?.('llama3.2:1b', new AbortController().signal);
+    expect(server.seen.find((s) => s.path === '/api/generate')?.body).toEqual({ model: 'llama3.2:1b', keep_alive: 0 });
   });
 
   it('a download reports progress as Ollama sends it and ends with success; it can be cancelled', async () => {

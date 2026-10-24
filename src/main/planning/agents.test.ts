@@ -46,7 +46,7 @@ describe('showing a workflow before anything is created', () => {
   it('lists every step with its action, provider and what blocks it, and says launching is not available yet', async () => {
     const e = await env();
     const plan = e.agents.preview(e.request());
-    expect(plan).toMatchObject({ workflow: 'implement', label: 'Plan, approve, implement', launchUnavailable: true });
+    expect(plan).toMatchObject({ workflow: 'implement', label: 'Plan, approve, implement', writesUnavailable: true });
     expect(plan.steps.map((s) => [s.role ?? s.kind, s.included])).toEqual([['planner', true], ['approval', true], ['implementer', true], ['reviewer', false], ['qa', false]]);
     const planner = plan.steps[0];
     expect(planner).toMatchObject({ provider: 'Claude Code', usage: 'subscription', writeCapable: false, blockedBy: '' });
@@ -205,7 +205,7 @@ describe('this step starts nothing', () => {
   it('the service is built without any runner, so there is nothing it could launch', async () => {
     const e = await env();
     const keys = Object.keys(e.agents).sort();
-    expect(keys).toEqual(['createWorkflow', 'preview', 'prompt', 'recordOutcome', 'roles', 'runs', 'transition']);
+    expect(keys).toEqual(['createWorkflow', 'get', 'preview', 'prompt', 'recordOutcome', 'roles', 'runs', 'transition']);
     e.agents.createWorkflow(e.request({ includeReviewer: true, includeQa: true }));
     expect(e.db.get<{ n: number }>('SELECT count(*) AS n FROM process_runs')?.n).toBe(0); // no program was ever started
   });

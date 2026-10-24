@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { AGENT_ROLE_IDS } from './agents';
+import { MODEL_NAME } from './providers';
+import { INFERENCE_MODES } from './resources';
+import { ROUTING_PROFILES, RoleOverrideSchema } from './routing';
 
 // One schema with a default for every key (ARCHITECTURE.md section 8, "Settings"). Each feature step adds its keys here;
 // keys are only ever added. There are no secret fields: credentials never live in ordinary settings (spec §14).
@@ -23,6 +27,20 @@ export const SettingsSchema = z.object({
   'providers.timeoutSeconds': z.number().int().min(10).max(3600).default(300),
   /** Context length asked of Ollama for each request; 0 keeps each model's own default. */
   'providers.ollamaContextLength': z.number().int().min(0).max(1_048_576).default(0),
+  /** Routing (spec §12): the profile, the local model it may use, explicit choices per role, and how often a run may be tried. */
+  'routing.profile': z.enum(ROUTING_PROFILES).default('balanced'),
+  'routing.localModel': z.string().regex(MODEL_NAME).or(z.literal('')).default(''),
+  'routing.roleOverrides': z.partialRecord(z.enum(AGENT_ROLE_IDS), RoleOverrideSchema).default({}),
+  'routing.maxAttempts': z.number().int().min(1).max(5).default(3),
+  /** Local inference (spec §13): the mode, the free memory a local model needs before it starts, and how idle models are released. */
+  'inference.mode': z.enum(INFERENCE_MODES).default('allow-local'),
+  'inference.minFreeVramMiB': z.number().int().min(0).max(98_304).default(6144),
+  'inference.minFreeRamMiB': z.number().int().min(0).max(1_048_576).default(8192),
+  'inference.holdForHeavyApps': z.boolean().default(true),
+  /** How long Ollama keeps a model loaded after a request (its documented keep_alive); 0 unloads it right away. */
+  'inference.keepAliveMinutes': z.number().int().min(0).max(120).default(5),
+  /** How often held local runs look at the resources again. Nothing is measured while nothing waits. */
+  'inference.monitorIntervalSeconds': z.number().int().min(5).max(600).default(30),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
   'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
   /** Tasks (spec §10): ask for an approved plan before a task moves to In progress, and which view the Tasks page opens in. */

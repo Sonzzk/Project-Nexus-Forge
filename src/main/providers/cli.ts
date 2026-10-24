@@ -102,7 +102,7 @@ export function createClaudeCodeAdapter(options: CliOptions): ProviderAdapter {
       if (exe === undefined) throw new AppError('TOOL_NOT_INSTALLED', 'Claude Code was not found on this PC.', { hint: 'Install it, then check again.' });
       // Read-only: plan mode, and no tool is pre-approved. The prompt travels on stdin, never on the command line.
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', ...(request.model === '' ? [] : ['--model', request.model])];
-      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Claude Code (read-only)', owner: { kind: 'agent-run', id: `claude-code-${randomUUID()}` } });
+      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Claude Code (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `claude-code-${randomUUID()}` } });
       const onAbort = (): void => void handle.cancel('stopped by the user');
       request.signal.addEventListener('abort', onAbort, { once: true });
       let streamed = '';
@@ -163,7 +163,7 @@ export function createCodexAdapter(options: CliOptions): ProviderAdapter {
       // check is skipped for text-only requests; a run inside a project folder keeps the check.
       const textOnly = request.cwd === undefined;
       const args = ['exec', '--json', '--sandbox', 'read-only', '--ephemeral', ...(textOnly ? ['--skip-git-repo-check'] : []), ...(request.model === '' ? [] : ['--model', request.model]), '-'];
-      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Codex (read-only)', owner: { kind: 'agent-run', id: `codex-${randomUUID()}` } });
+      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Codex (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `codex-${randomUUID()}` } });
       const onAbort = (): void => void handle.cancel('stopped by the user');
       request.signal.addEventListener('abort', onAbort, { once: true });
       const result = await handle.result;

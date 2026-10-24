@@ -9,6 +9,7 @@ export interface MockProvider extends ProviderAdapter {
   requests: GenerateRequest[];
   pulled: string[];
   warmed: string[];
+  unloaded: string[];
   status: Omit<ProviderStatus, 'checkedAt' | 'lastSuccessAt'>;
   /** What the next `generate` answers; a function can inspect the request. */
   answer: string | ((request: GenerateRequest) => string);
@@ -25,6 +26,7 @@ export function createMockProvider(id: ProviderId, overrides: Partial<Pick<MockP
     requests: [],
     pulled: [],
     warmed: [],
+    unloaded: [],
     status: {
       id,
       label: PROVIDER_LABELS[id],
@@ -50,6 +52,10 @@ export function createMockProvider(id: ProviderId, overrides: Partial<Pick<MockP
     },
     warmUp(model) {
       mock.warmed.push(model);
+      return Promise.resolve();
+    },
+    unload(model) {
+      mock.unloaded.push(model);
       return Promise.resolve();
     },
     pull(model, _signal, onProgress: (progress: PullProgress) => void) {

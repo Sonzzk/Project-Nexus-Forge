@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 7)
+## Schema (version 8)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -37,9 +37,10 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `task_notes` | 5 | task (cascade), time, text | |
 | `risks` | 5 | project (cascade), kind (bug or risk), title, severity, status, optional task | The bugs and risks register. |
 | `milestone_snapshots` | 5 | milestone (cascade), time, label, progress and counts by status | |
-| `agent_runs` | 6 | project (cascade), task, workflow, step, role, provider text, state, write-capable, optional, note | A record of one role working on one task; nothing starts a program. |
+| `agent_runs` | 6 | project (cascade), task, workflow, step, role, provider text, state, write-capable, optional, note; from 8 also priority, model, attempt, the run it retries, the routing decision (JSON), the answer, and when a start was asked for | A record of one role working on one task. Only the run queue starts it, and only read-only roles until Step 15. `requested_at` is not exported: an imported run never waits to start. |
 | `agent_run_transitions` | 6 | run (cascade), from and to state, time, reason | The state history. |
 | `provider_checks` | 7 | provider, time, status, version, message, hint, details, last successful request | What the last check found; derived, so it is not exported. No credentials. |
+| `writer_locks` | 8 | project (primary key, cascade), run, time taken, working folder | One writer per project. Kept across restarts until the person releases a lock left by an interrupted run; not exported, because a lock only means something on the PC where that run ran. |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 

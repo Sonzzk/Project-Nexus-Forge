@@ -1,4 +1,5 @@
-import { AGENT_ROLES, RUN_TRANSITIONS, renderPrompt, roleById, workflowById, type AgentRoleId, type AgentRun, type RunState, type WorkflowPreview } from '../../src/shared/agents';
+import { AGENT_ROLES, RUN_TRANSITIONS, renderPrompt, roleById, workflowById, type AgentRoleId, type AgentRun, type QueueView, type RunState, type WorkflowPreview } from '../../src/shared/agents';
+import { chooseRoute, type Route } from '../../src/shared/routing';
 import { allowedNext, progressOf, type Milestone, type Note, type PortfolioEntry, type Recommendations, type Risk, type Snapshot, type Task, type TaskStatus } from '../../src/shared/tasks';
 import type { FakeApi } from './fake-api';
 
@@ -44,6 +45,10 @@ export interface FakePlanning {
   snapshots: Snapshot[];
   runs: AgentRun[];
   recommendation: Recommendations;
+  /** The writer lock of project-1, as queue:view reports it. */
+  lock: QueueView['lock'];
+  /** What a started run answers (the fake finishes it at once). */
+  answer: string;
 }
 
 export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}): FakePlanning {
@@ -55,6 +60,8 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
     snapshots: [],
     runs: [],
     recommendation: { items: [], message: 'There are no tasks yet. Add one, or break a feature down into tasks.' },
+    lock: null,
+    answer: 'Plan: 1. Add the jump input. 2. Tune the height.',
     ...seed,
   };
   let counter = 100;
@@ -179,7 +186,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
       workflow: template.id,
       label: template.label,
       description: template.description,
-      launchUnavailable: true,
+      writesUnavailable: true,
       steps: template.steps.map((step) => {
         const role = step.role === undefined ? undefined : roleById(step.role);
         return {
@@ -206,6 +213,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
       .map((s, i): AgentRun => ({
         id: `run-${++counter}`, projectId: task.projectId, taskId, workflowId: 'wf-1', stepIndex: i, role: s.role as AgentRoleId, providerId: s.provider, state: 'queued',
         writeCapable: s.writeCapable, optional: s.optional, note: '', allowedNext: [...RUN_TRANSITIONS.queued], createdAt: '2026-10-24T05:00:00.000Z', updatedAt: '2026-10-24T05:00:00.000Z',
+        priority: task.priority, model: '', attempt: 1, retryOf: null, route: null, result: '', requestedAt: null, hold: '',
       }));
     state.runs = [...state.runs, ...made];
     return made;
@@ -214,12 +222,55 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
   fake.handlers['agents:prompt'] = (input) => {
     const { taskId, role } = input as { taskId: string; role: AgentRoleId };
     const r = roleById(role) ?? fail('INVALID_INPUT', 'That role does not exist.');
-    return { role: r.id, writeCapable: r.writeCapable, prompt: renderPrompt(r, find(taskId), 'Alpha'), note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Step 13.' };
+    return { role: r.id, writeCapable: r.writeCapable, prompt: renderPrompt(r, find(taskId), 'Alpha'), note: 'This is the text a provider would receive for this task. Nothing is sent until you start a run from the queue.' };
   };
   fake.handlers['agents:record'] = (input) => {
     const { runId, outcome } = input as { runId: string; outcome: RunState };
     state.runs = state.runs.map((r) => (r.id === runId ? { ...r, state: outcome, allowedNext: [], note: 'Recorded by hand' } : r));
     return state.runs.find((r) => r.id === runId);
+  };
+  const run = (id: unknown): AgentRun => state.runs.find((r) => r.id === id) ?? fail('NOT_FOUND', 'That run does not exist.');
+  const update = (id: string, fields: Partial<AgentRun>): AgentRun => {
+    state.runs = state.runs.map((r) => (r.id === id ? { ...r, ...fields } : r));
+    return run(id);
+  };
+  const routeFor = (input: unknown): Route => {
+    const { runId, choice } = input as { runId: string; choice?: { provider: 'ollama' | 'claude-code' | 'codex'; model: string } };
+    const r = run(runId);
+    const t = r.taskId === null ? undefined : state.tasks.find((x) => x.id === r.taskId);
+    const available = { ollama: { ok: true, why: '' }, 'claude-code': { ok: true, why: '' }, codex: { ok: true, why: '' } };
+    return chooseRoute({ profile: fake.settings['routing.profile'], role: r.role, roleLabel: roleById(r.role)?.label ?? r.role, task: { provider: t?.provider ?? '', complexity: t?.complexity ?? '' }, override: fake.settings['routing.roleOverrides'][r.role], ...(choice === undefined ? {} : { choice }), localModel: fake.settings['routing.localModel'] || 'llama3.2:1b', available, apiKeySet: false });
+  };
+  const finishWith = (id: string, route: Route): AgentRun => update(id, { state: 'completed', allowedNext: [], route, providerId: route.provider ?? '', model: route.model, result: state.answer, note: `Finished with ${route.provider ?? 'nothing'}.` });
+  fake.handlers['queue:view'] = () => ({
+    runs: state.runs.map((r) => ({ ...r, taskTitle: state.tasks.find((t) => t.id === r.taskId)?.title ?? '(task deleted)' })),
+    lock: state.lock,
+    writesEnabled: false,
+    maxAttempts: 3,
+  });
+  fake.handlers['queue:route'] = routeFor;
+  fake.handlers['queue:start'] = (input) => {
+    const r = run((input as { runId: string }).runId);
+    if (r.writeCapable) fail('PERMISSION_REQUIRED', 'Runs that change project files arrive with Step 15.');
+    if (r.state !== 'queued') fail('INVALID_INPUT', 'Only a queued run can be started.');
+    const route = routeFor(input);
+    if (route.provider === null) fail('INVALID_INPUT', `No provider can take this run. ${route.reasons.join(' ')}`);
+    return finishWith(r.id, route);
+  };
+  fake.handlers['queue:cancel'] = (input) => update((input as { runId: string }).runId, { state: 'cancelled', allowedNext: [], hold: '', requestedAt: null, note: 'Cancelled before it started.' });
+  fake.handlers['queue:setPriority'] = (input) => {
+    const { runId, priority } = input as { runId: string; priority: AgentRun['priority'] };
+    return update(runId, { priority });
+  };
+  fake.handlers['queue:retry'] = (input) => {
+    const r = run((input as { runId: string }).runId);
+    const copy: AgentRun = { ...r, id: `run-${++counter}`, state: 'queued', attempt: r.attempt + 1, retryOf: r.id, result: '', note: '' };
+    state.runs = [...state.runs, copy];
+    return finishWith(copy.id, routeFor({ ...(input as object), runId: copy.id }));
+  };
+  fake.handlers['queue:releaseLock'] = () => {
+    state.lock = null;
+    return { released: true };
   };
   refresh();
   return state;

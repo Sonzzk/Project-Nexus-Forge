@@ -40,8 +40,36 @@ export interface ProviderService {
   generate(choice: ProviderChoice, prompt: string, purpose: GeneratePurpose): Promise<GenerateResult>;
   suggestSteps(input: { projectId: string; choice: ProviderChoice; title: string; description: string }): Promise<SuggestStepsResult>;
   draftDocument(input: { projectId: string; choice: ProviderChoice; docType: DocType; instruction: string; currentText: string }): Promise<GenerateResult>;
-  /** A read-only request that runs in the project folder (used by the workbench from Step 13). Hooks and MCP servers the project would start are confirmed first. */
+  /** A read-only request that runs in the project folder. Hooks and MCP servers the project would start are confirmed first. */
   runInProject(input: { projectId: string; choice: ProviderChoice; prompt: string }): Promise<GenerateResult>;
+  /** One queued agent run (Step 13): read-only, in the project folder for the coding agents, with the queue's note in the confirmation. */
+  runAgent(input: AgentRequest): Promise<GenerateResult>;
+  /** What is using a provider right now, if anything. */
+  busy(provider: ProviderId): string | undefined;
+  /** Asks Ollama to release a model from memory (keep_alive 0, its documented way). */
+  unload(model: string): Promise<{ unloaded: true }>;
+}
+
+export interface AgentRequest {
+  projectId: string;
+  choice: ProviderChoice;
+  prompt: string;
+  /** The route, its cost and any retry or escalation, shown before a cloud send. */
+  note: string;
+  signal: AbortSignal;
+  /** Called after the person approved (or nothing needed approval), right before the provider is called. */
+  onApproved: () => void;
+  /** The run that owns the program, so the process runner refuses a second program for it. */
+  ownerId: string;
+}
+
+interface RequestExtra {
+  cwd?: string;
+  label: string;
+  detail?: string;
+  signal?: AbortSignal;
+  onApproved?: () => void;
+  ownerId?: string;
 }
 
 export interface ProviderServiceOptions {
@@ -77,7 +105,7 @@ interface Row {
 export function createProviderService(options: ProviderServiceOptions): ProviderService {
   const { db, adapters, projects, activity, logger, redactor, confirm } = options;
   const now = options.now ?? (() => new Date());
-  let active: { controller: AbortController; label: string } | undefined;
+  const active = new Map<ProviderId, { controller: AbortController; label: string; queued: boolean }>();
   const checking = new Map<ProviderId, Promise<ProviderStatus>>(); // a second look at a provider joins the one already under way
 
   const stored = (id: ProviderId): ProviderStatus | undefined => {
@@ -138,15 +166,20 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     db.run('UPDATE provider_checks SET last_success_at = ?, status = CASE WHEN status = \'installed\' THEN \'working\' ELSE status END WHERE provider_id = ?', stamp, id);
   };
 
-  /** One request at a time: a second would compete for the same model or the same sign-in. */
-  async function exclusive<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    if (active !== undefined) throw new AppError('CONFLICT', `${active.label} is still running.`, { hint: 'Wait for it to finish, or stop it.' });
+  /** One request per provider at a time: a second would compete for the same model or the same sign-in. A queue run brings its own signal. */
+  async function exclusive<T>(id: ProviderId, label: string, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const busy = active.get(id);
+    if (busy !== undefined) throw new AppError('CONFLICT', `${busy.label} is still running.`, { hint: 'Wait for it to finish, or stop it.' });
+    if (signal?.aborted === true) throw new AppError('CANCELLED', 'Stopped before it started.');
     const controller = new AbortController();
-    active = { controller, label };
+    const onAbort = (): void => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    active.set(id, { controller, label, queued: signal !== undefined });
     try {
       return await work(controller.signal);
     } finally {
-      active = undefined;
+      active.delete(id);
+      signal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -163,7 +196,7 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     }
   };
 
-  async function runRequest(choice: ProviderChoice, prompt: string, purpose: GeneratePurpose, extra: { cwd?: string; label: string; detail?: string }): Promise<GenerateResult> {
+  async function runRequest(choice: ProviderChoice, prompt: string, purpose: GeneratePurpose, extra: RequestExtra): Promise<GenerateResult> {
     if (!PROVIDER_IDS.includes(choice.provider)) throw new AppError('INVALID_INPUT', 'That provider does not exist.');
     if (choice.model !== '' && !MODEL_NAME.test(choice.model)) throw new AppError('INVALID_INPUT', 'That is not a valid model name.');
     const text = prompt.trim();
@@ -187,9 +220,10 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     }
 
     const started = Date.now();
-    return exclusive(`${label} request`, async (signal) => {
+    return exclusive(id, `${label} request`, async (signal) => {
+      extra.onApproved?.(); // the queue moves its run to running here; if that refuses, nothing is sent
       try {
-        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }) });
+        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }) });
         markSuccess(id);
         const truncated = output.text.length > MAX_OUTPUT;
         activity.record({ kind: 'provider.generated', severity: 'info', summary: `${label} answered a ${purpose.replace('-', ' ')} request (${output.text.length.toLocaleString('en-US')} characters).`, details: { provider: id, model: choice.model, purpose, promptChars: text.length, outputChars: output.text.length, usageReported: output.usage !== null } });
@@ -200,8 +234,16 @@ export function createProviderService(options: ProviderServiceOptions): Provider
         activity.record({ kind: 'provider.failed', severity: e.code === 'CANCELLED' ? 'info' : 'warning', summary: `${label}: ${e.message}`, details: { provider: id, code: e.code, purpose } });
         throw e;
       }
-    });
+    }, extra.signal);
   }
+
+  /** What running in the project folder means, for the confirmation. Throws when the folder is gone. */
+  const inProject = (rootPath: string, provider: ProviderId): string => {
+    if (!existsSync(rootPath)) throw new AppError('NOT_FOUND', `The folder ${rootPath} could not be found.`, { hint: 'Reconnect the drive, then try again.' });
+    // `claude -p` runs the hooks of .claude/settings.json and connects the servers of .mcp.json without asking (docs, headless mode).
+    const runs = provider === 'claude-code' ? ['.claude/settings.json', '.mcp.json'].filter((file) => existsSync(join(rootPath, file))) : [];
+    return `The program runs in ${rootPath} in read-only mode and can read files there, which then go to ${PROVIDER_LABELS[provider]}.${runs.length > 0 ? `\n\nThis project has ${runs.join(' and ')}. Claude Code runs the hooks and starts the servers they define without asking, which means running code from the project.` : ''}`;
+  };
 
   const project = (id: string) => {
     const found = projects.get(id);
@@ -224,7 +266,7 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     async warmUp(model) {
       if (!MODEL_NAME.test(model)) throw new AppError('INVALID_INPUT', 'That is not a valid model name.');
       const adapter = adapters.ollama;
-      await exclusive('Loading the model', (signal) => (adapter.warmUp === undefined ? Promise.reject(new AppError('UNSUPPORTED', 'Ollama cannot preload models here.')) : adapter.warmUp(model, signal)));
+      await exclusive('ollama', 'Loading the model', (signal) => (adapter.warmUp === undefined ? Promise.reject(new AppError('UNSUPPORTED', 'Ollama cannot preload models here.')) : adapter.warmUp(model, signal)));
       activity.record({ kind: 'provider.warmed', severity: 'info', summary: `Loaded the Ollama model ${model} into memory.`, details: { model } });
       return { loaded: true };
     },
@@ -240,16 +282,27 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       if (!ok) return { pulled: false };
       const adapter = adapters.ollama;
       if (adapter.pull === undefined) throw new AppError('UNSUPPORTED', 'Ollama cannot download models here.');
-      await exclusive(`Downloading ${model}`, (signal) => adapter.pull?.(model, signal, options.progress) ?? Promise.resolve());
+      await exclusive('ollama', `Downloading ${model}`, (signal) => adapter.pull?.(model, signal, options.progress) ?? Promise.resolve());
       activity.record({ kind: 'provider.model-downloaded', severity: 'info', summary: `Downloaded the Ollama model ${model}.`, details: { model } });
       await check('ollama');
       return { pulled: true };
     },
 
     cancel() {
-      if (active === undefined) return { cancelled: false };
-      active.controller.abort();
-      return { cancelled: true };
+      // Stops what a page started; runs from the queue are cancelled through the queue, which owns them.
+      const own = [...active.values()].filter((a) => !a.queued);
+      for (const a of own) a.controller.abort();
+      return { cancelled: own.length > 0 };
+    },
+
+    busy: (id) => active.get(id)?.label,
+
+    async unload(model) {
+      if (!MODEL_NAME.test(model)) throw new AppError('INVALID_INPUT', 'That is not a valid model name.');
+      const adapter = adapters.ollama;
+      await exclusive('ollama', 'Unloading the model', (signal) => (adapter.unload === undefined ? Promise.reject(new AppError('UNSUPPORTED', 'Ollama cannot unload models here.')) : adapter.unload(model, signal)));
+      activity.record({ kind: 'provider.unloaded', severity: 'info', summary: `Asked Ollama to unload the model ${model} from memory.`, details: { model } });
+      return { unloaded: true };
     },
 
     generate: (choice, prompt, purpose) => runRequest(choice, prompt, purpose, { label: 'This request' }),
@@ -288,12 +341,16 @@ export function createProviderService(options: ProviderServiceOptions): Provider
 
     async runInProject({ projectId, choice, prompt }) {
       const p = project(projectId);
-      if (!existsSync(p.rootPath)) throw new AppError('NOT_FOUND', `The folder ${p.rootPath} could not be found.`, { hint: 'Reconnect the drive, then try again.' });
       if (choice.provider === 'ollama') throw new AppError('UNSUPPORTED', 'Ollama answers prompts; it does not run in a project folder.', { hint: 'Use Claude Code or Codex for project sessions.' });
-      // `claude -p` runs the hooks of .claude/settings.json and connects the servers of .mcp.json without asking (docs, headless mode).
-      const runs = choice.provider === 'claude-code' ? ['.claude/settings.json', '.mcp.json'].filter((file) => existsSync(join(p.rootPath, file))) : [];
-      const detail = `The program runs in ${p.rootPath} in read-only mode and can read files there, which then go to ${PROVIDER_LABELS[choice.provider]}.${runs.length > 0 ? `\n\nThis project has ${runs.join(' and ')}. Claude Code runs the hooks and starts the servers they define without asking, which means running code from the project.` : ''}`;
-      return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', detail });
+      return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', detail: inProject(p.rootPath, choice.provider) });
+    },
+
+    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId }) {
+      const p = project(projectId);
+      const extra = { label: 'This agent run', signal, onApproved, ownerId };
+      // Ollama only answers the text it is given; the coding agents run read-only in the project folder.
+      if (choice.provider === 'ollama') return runRequest(choice, prompt, 'agent-run', { ...extra, detail: note });
+      return runRequest(choice, prompt, 'agent-run', { ...extra, cwd: p.rootPath, detail: `${note}\n\n${inProject(p.rootPath, choice.provider)}` });
     },
   };
 }

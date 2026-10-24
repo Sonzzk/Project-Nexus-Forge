@@ -17,7 +17,10 @@ import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
 import { createClaudeCodeAdapter, createCodexAdapter, createOllamaAdapter, createProviderService, locateProgram, sandboxPath } from './providers';
-import { agentTables, createAgentService, createPlanningService, createTaskService, planningTables } from './planning';
+import { agentTables, createAgentService, createPlanningService, createRunQueue, createTaskService, planningTables } from './planning';
+import { createResourceMonitor } from './resources';
+import { evaluateLocal, type ResourceReport } from '@shared/resources';
+import { availabilityFrom } from '@shared/routing';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
 import {
@@ -262,6 +265,7 @@ async function startServices(): Promise<void> {
         allowRemote: () => settingsStore.get('providers.ollamaAllowRemote'),
         timeoutMs,
         contextLength: () => settingsStore.get('providers.ollamaContextLength'),
+        keepAliveMinutes: () => settingsStore.get('inference.keepAliveMinutes'),
         locateProgram: () => locateProgram(['ollama'], [join(localPrograms, 'Ollama')]),
         logger: logger.child('ollama'),
       }),
@@ -269,6 +273,52 @@ async function startServices(): Promise<void> {
       codex: createCodexAdapter({ ...cli, locate: () => locateProgram(['codex']) }),
     },
   });
+  // Resources and the local-inference policy (spec §13). Probes run only when a snapshot is asked for.
+  const systemRoot = process.env['SystemRoot'] ?? 'C:\\Windows';
+  const monitor = createResourceMonitor({
+    runner,
+    locateNvidiaSmi: () => locateProgram(['nvidia-smi'], [join(systemRoot, 'System32'), join(process.env['ProgramFiles'] ?? 'C:\\Program Files', 'NVIDIA Corporation', 'NVSMI')]),
+    tasklist: join(systemRoot, 'System32', 'tasklist.exe'),
+    cwd: userDataDir,
+    logger: logger.child('resources'),
+  });
+  const report = async (maxAgeMs = 0): Promise<ResourceReport> => {
+    const snapshot = await monitor.snapshot(maxAgeMs);
+    const verdict = evaluateLocal(snapshot, {
+      mode: settingsStore.get('inference.mode'),
+      minFreeVramMiB: settingsStore.get('inference.minFreeVramMiB'),
+      minFreeRamMiB: settingsStore.get('inference.minFreeRamMiB'),
+      holdForHeavyApps: settingsStore.get('inference.holdForHeavyApps'),
+    });
+    return { snapshot, verdict };
+  };
+
+  // The run queue: routes runs, starts them in order, owns the writer lock. Read-only until Step 15's permission gate exists.
+  const queue = createRunQueue({
+    db,
+    agents,
+    tasks,
+    projects,
+    activity,
+    logger: logger.child('queue'),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId }),
+    availability: async () => availabilityFrom(await providers.list()),
+    providerBusy: (id) => providers.busy(id),
+    routing: () => ({
+      profile: settingsStore.get('routing.profile'),
+      overrides: settingsStore.get('routing.roleOverrides'),
+      localModel: settingsStore.get('routing.localModel'),
+      maxAttempts: settingsStore.get('routing.maxAttempts'),
+      apiKeySet: (process.env['ANTHROPIC_API_KEY'] ?? '') !== '',
+    }),
+    localPolicy: async () => (await report(5000)).verdict,
+    recheckMs: () => settingsStore.get('inference.monitorIntervalSeconds') * 1000,
+    confirm: (options) => ui.confirm(options),
+    writesEnabled: false,
+  });
+  queue.recover();
+  shutdown.register('agent-queue', 25, () => queue.shutdown());
+
   registerHandlers(ipc, {
     logger,
     settings: settingsStore,
@@ -283,6 +333,8 @@ async function startServices(): Promise<void> {
     planning,
     agents,
     providers,
+    queue,
+    resources: () => report(),
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,

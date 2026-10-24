@@ -57,12 +57,18 @@ Documentation folders must be inside the project; a folder elsewhere on disk is 
 
 The board has no drag and drop (buttons offer the valid moves). Milestones are an ordered list, not a calendar timeline; target dates are shown but nothing warns when one passes. The manual breakdown form creates the tasks you describe; AI-assisted breakdown arrives in Step 12. Suggested role and provider on a task are text for now; Steps 11 and 12 connect them to real roles and providers. Release checklists are Step 23, the Backrooms profile Step 18. The features were proven on fixture projects and the fake `window.api`; the user's real projects were not used.
 
-## KI-015 · Agent roles are records until Steps 12 and 13 (found in Step 11, accepted)
+## KI-015 · Agent roles are records until Steps 12 and 13 (found in Step 11, handled in Step 13)
 
 No agent can be started yet: the Run buttons are disabled and labeled `Upcoming · Step 12`. Run states other than queued, completed, failed and cancelled can only be set by the runner that arrives in Steps 12 and 13, so a stored run will normally sit in queued until someone records an outcome by hand. The prompt templates are first drafts; Step 12 checks them against real provider behavior. Providers are free text on the task until Step 12.
 
 Update (Step 12): KI-003 and KI-008 are handled. The Integrations page reports "Ollama is installed but not running" with the fix, and Claude Code's capabilities are read from what each installed version accepts. This PC has two Claude Code installs (2.1.197 on PATH and 2.1.278 in `%USERPROFILE%\.local\bin`); the app uses the second because it looks in that folder first.
 
+Update (Step 13): runs now start from the queue, read-only only. Write-capable implementer runs stay disabled and labeled `Upcoming · Step 15`.
+
 ## KI-016 · Provider integrations: what was and was not proven live (found in Step 12, accepted)
 
 Live on this PC (2026-10-24, statuses only, no prompt sent): Ollama installed and detected as not running; with `ollama serve` started for the check, version 0.34.2 and zero models, reported as "needs setup"; the process tree started for the check was stopped afterwards. Claude Code 2.1.278 detected with its options. Codex CLI is not installed. Not proven live: a real Ollama generation (no models are installed and none may be downloaded without approval; the generation, cancel, timeout and download paths are tested against recorded responses on a local stand-in server), a real Claude Code run (it would use the subscription), and any Codex run (its event format is read tolerantly, D-037). Sign-in state of Claude Code and Codex is not checked. Usage and quota are never shown unless a provider returns them; Step 14 stores what Claude Code reports as an estimate.
+
+## KI-017 · Orchestration limits (found in Step 13, accepted)
+
+Runs that change files cannot start until Step 15, so the writer lock is exercised only by unit tests (with writes switched on) and by a lock left in the database; no real writer has held it. A run's answer is kept only when it finishes; streaming output and the live session view arrive in Step 17. Heavy workloads are found by program name only (Unreal Editor, Blender), not by measured GPU use, and a model's size is not compared with free VRAM: the thresholds are the only check, and they promise nothing about whether a model fits. CPU use is averaged over the few hundred milliseconds a check takes. Not proven live: a real local generation (no Ollama models are installed on this PC; the end-to-end test uses a stand-in server) and any real cloud run (the end-to-end test declines the confirmation, so no usage was spent). The resource check itself ran on this PC (nvidia-smi reported the RTX 3060; tasklist was read).

@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 12 · Provider integrations: done (2026-10-24, tag `step-12`)
-**Next step:** Step 13 · Agent orchestration and routing (Opus · Extra High), see [ROADMAP.md](ROADMAP.md#step-13--agent-orchestration-and-routing).
+**Current step:** Step 13 · Agent orchestration and routing: done (2026-10-24, tag `step-13`)
+**Next step:** Step 14 · Usage tracking and limits (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-14--usage-tracking-and-limits).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -17,6 +17,7 @@
 - **Step 10.** Tasks and Roadmap: lifecycle, dependencies, milestones with scope tiers, board, list and roadmap views, templates, manual breakdown, explained recommendation, bugs and risks register, snapshots, portfolio and dashboard cards (ARCHITECTURE.md section 23, D-035). Verified by all six gates.
 - **Step 11.** Six agent roles (only the implementer can write), the nine run states with a tested state machine, workflow templates with optional reviewer and QA steps, queued run records, prompt preview and the Agent work section of the task detail; no program is started (ARCHITECTURE.md section 24, D-036). Verified by all six gates.
 - **Step 12.** Provider contract, Ollama / Claude Code / Codex CLI adapters, the Integrations page, a dashboard connectivity card, and AI-assisted step suggestions and document drafts that are only ever previewed (ARCHITECTURE.md section 25, D-037). Verified by all six gates and by live status checks on this PC (below).
+- **Step 13.** Routing profiles with per-role and per-run choices, the run queue (priorities, holds with reasons, one run per provider, duplicate-launch refusal, cancel of owned programs only), the per-project writer lock that survives restarts, bounded and confirmed retries, the resource monitor and the local-inference policy, the AI Workbench and the Active agent sessions card (ARCHITECTURE.md section 26, D-038). Verified by all six gates (below).
 
 ## In progress
 - Nothing.
@@ -26,10 +27,10 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 13 (needs Opus): routing profiles, the run queue with the single-writer lock, bounded retries and approval before escalating, and the resource monitor with the local-inference policy.
+- Step 14 (Sonnet): the usage log (task, provider, model, times, status, and usage only when a provider returns it), configurable launch limits per day, project and task enforced before a run starts, and a usage page with a dashboard summary. It builds on the queue's `request`/`launch` path and the `route_json` each run keeps.
 
 ## Application feature status
-The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
+The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -55,6 +56,15 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 13
+- **Requested:** routing profiles (Manual, Local First, Balanced, Cloud First) with per-role provider and model choices and the route and known cost shown before cloud work; a run queue with priorities, cancellation and duplicate-launch prevention; a per-project single-writer lock that survives restarts; read-only runs alongside when safe; bounded timeouts and retries with approval before escalating or repeating a failed cloud call; a resource monitor (CPU, RAM, nvidia-smi GPU and VRAM, configurable interval, graceful absence) and the local-inference policy (modes, thresholds, heavy-workload holds, pause and cancel, documented Ollama unloading, never stopping other programs).
+- **Changed:** `src/shared/routing.ts`, `src/shared/resources.ts`, `src/main/planning/queue.ts`, `src/main/resources/` (monitor), migration `0008_queue.sql`, new run fields in `src/shared/agents.ts` and `planning/agents.ts` and their export columns, `ProviderService` (one request per provider, `runAgent`, `busy`, `unload`), Ollama `keep_alive` and `unload`, CLI runs owned by their run id, nine channels, ten settings, the AI Workbench (`features/workbench/`), Start, Cancel and Try again in the task's Agent work, the Active agent sessions card, manifest states (AI Workbench, Run an agent and the sessions card available; `action.write-run` upcoming at Step 15), `COMPLETED_THROUGH_STEP` 13, fakes and fixtures (`test/fixtures/resources`), `test/e2e/queue.e2e.ts`; ARCHITECTURE.md section 26, D-038, KI-017 (KI-015 handled), DATA.md schema v8, CHANGELOG and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (793 of 793), `build`, `check:docs` and `test:e2e` (37 of 37, including a local run through the real app against a stand-in Ollama, a run held by the policy with its reason, a resource check that read this PC, and a Claude Code run that showed its route and cost and was declined in its confirmation, so nothing was sent). A screenshot of the Workbench in the built app showed this PC's RTX 3060 (7.8 GB of 12.0 GB VRAM free at the time) and 33.7 GB of RAM free.
+- **Unfinished:** nothing in Step 13. Not built on purpose: write-capable runs (Step 15), the usage log and launch limits (Step 14), streaming output and the live session view (Step 17), per-process GPU measurement (KI-017).
+- **Known risks:** the writer lock has only been held in tests, because no run can write yet; heavy workloads are found by program name; no real local generation or cloud run was made (no Ollama models are installed, and no usage may be spent).
+- **Relevant files:** `src/main/planning/queue.ts`, `src/shared/routing.ts`, `src/shared/resources.ts`, `src/main/resources/monitor.ts`, `src/renderer/src/features/workbench/WorkbenchPage.tsx`.
+- **Next task:** Step 14 · Usage tracking and limits.
 
 ## Handoff: Step 12
 - **Requested:** a typed provider interface with capability detection, real adapters for Ollama, Claude Code and Codex CLI behind it, an Integrations page with actionable messages and "Unavailable from this provider" for quotas, no hosted call without showing the destination, no write-capable run, and AI-assisted task breakdown and document drafting with a manually chosen provider that is always previewed.

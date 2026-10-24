@@ -174,6 +174,18 @@ describe('sending to a provider', () => {
     expect((await e.service.generate(local, 'again', 'connection-test')).sent).toBe(true);
   });
 
+  it('holds one request per provider: a local and a cloud request can run at the same time', async () => {
+    const e = await env();
+    e.adapters.ollama.hold = true;
+    const slow = e.service.generate(local, 'slow', 'connection-test');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(e.service.busy('ollama')).toBe('Ollama (local) request');
+    expect(e.service.busy('claude-code')).toBeUndefined();
+    expect((await e.service.generate(claude, 'meanwhile', 'connection-test')).sent).toBe(true);
+    e.service.cancel();
+    expect(await failure(slow)).toMatchObject({ code: 'CANCELLED' });
+  });
+
   it('records a failure in the activity list without the prompt, and passes the error on unchanged', async () => {
     const e = await env();
     e.adapters.ollama.failWith = new AppError('TOOL_NOT_RUNNING', 'Ollama is not answering.', { hint: 'Start it.' });
@@ -257,6 +269,60 @@ describe('task breakdown and document drafting (the first uses of a provider)', 
     const e = await env({ confirm: false });
     expect(await e.service.suggestSteps({ projectId: e.project.id, choice: claude, title: 'x', description: '' })).toMatchObject({ sent: false, steps: [] });
     expect(await e.service.draftDocument({ projectId: e.project.id, choice: claude, docType: 'TASKS', instruction: '', currentText: '' })).toMatchObject({ sent: false });
+  });
+});
+
+describe('a queued agent run', () => {
+  const agentRun = (e: Awaited<ReturnType<typeof env>>, choice: { provider: ProviderId; model: string }, extra: { signal?: AbortSignal; onApproved?: () => void } = {}) =>
+    e.service.runAgent({ projectId: e.project.id, choice, prompt: 'You are the planner.', note: 'Routing (Balanced): because.\nCost: not free.', signal: extra.signal ?? new AbortController().signal, onApproved: extra.onApproved ?? (() => undefined), ownerId: 'run-1' });
+
+  it('a coding agent runs read-only in the project folder, owned by the run, after a confirmation that carries the queue\'s note', async () => {
+    const e = await env();
+    const order: string[] = [];
+    e.adapters['claude-code'].answer = () => (order.push('sent'), 'A plan.');
+    const result = await agentRun(e, claude, { onApproved: () => order.push('approved') });
+    expect(result).toMatchObject({ sent: true, text: 'A plan.' });
+    expect(order).toEqual(['approved', 'sent']);
+    expect(e.adapters['claude-code'].requests[0]).toMatchObject({ cwd: e.project.rootPath, ownerId: 'run-1' });
+    expect(e.confirms[0]?.detail).toMatch(/Routing \(Balanced\): because\.[\s\S]*read-only mode/);
+  });
+
+  it('Ollama gets only the text, with no folder and no confirmation', async () => {
+    const e = await env();
+    await agentRun(e, local);
+    expect(e.confirms).toEqual([]);
+    expect(e.adapters.ollama.requests[0]?.cwd).toBeUndefined();
+  });
+
+  it('sends nothing when the run refuses to start, when the person declines, or when it was already stopped', async () => {
+    const e = await env();
+    expect(await failure(agentRun(e, claude, { onApproved: () => { throw new AppError('PERMISSION_REQUIRED', 'No.'); } }))).toMatchObject({ code: 'PERMISSION_REQUIRED' });
+    e.answers.confirm = false;
+    expect((await agentRun(e, claude)).sent).toBe(false);
+    const stopped = new AbortController();
+    stopped.abort();
+    expect(await failure(agentRun(e, local, { signal: stopped.signal }))).toMatchObject({ code: 'CANCELLED' });
+    expect(e.adapters['claude-code'].requests).toEqual([]);
+    expect(e.adapters.ollama.requests).toEqual([]);
+  });
+
+  it('is stopped through its own signal; the Stop button of a page leaves it alone', async () => {
+    const e = await env();
+    e.adapters.ollama.hold = true;
+    const controller = new AbortController();
+    const running = agentRun(e, local, { signal: controller.signal });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(e.service.cancel()).toEqual({ cancelled: false });
+    controller.abort();
+    expect(await failure(running)).toMatchObject({ code: 'CANCELLED' });
+  });
+
+  it('unloading a model is a user action through Ollama, and is recorded', async () => {
+    const e = await env();
+    expect(await e.service.unload('llama3.2:1b')).toEqual({ unloaded: true });
+    expect(e.adapters.ollama.unloaded).toEqual(['llama3.2:1b']);
+    expect(await failure(e.service.unload('bad name!'))).toMatchObject({ code: 'INVALID_INPUT' });
+    expect(e.activity.list({ kinds: ['provider.unloaded'], limit: 5 })).toHaveLength(1);
   });
 });
 

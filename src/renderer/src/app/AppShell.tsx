@@ -11,6 +11,7 @@ import { IntegrationsPage } from '../features/integrations/IntegrationsPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { StatusPage } from '../features/status/StatusPage';
 import { UpcomingPage } from '../features/UpcomingPage';
+import { WorkbenchPage } from '../features/workbench/WorkbenchPage';
 import { useProjects } from '../lib/projects';
 import { useSettings } from '../lib/settings';
 import { createActionHandlers } from './actions';
@@ -23,6 +24,7 @@ import { TopBar } from './TopBar';
 const PAGES: Partial<Record<NavSection, ComponentType>> = {
   dashboard: Dashboard,
   projects: ProjectsPage,
+  workbench: WorkbenchPage,
   git: GitPage,
   context: ContextPage,
   tasks: TasksPage,

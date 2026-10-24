@@ -15,7 +15,8 @@ import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
-import { createAgentService, createPlanningService, createTaskService } from '../planning';
+import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
+import { availabilityFrom } from '@shared/routing';
 import { createAuditService, createHandoffService, createMemoryService, createPackService } from '../scanning';
 import { createStorageService, createTransfer, loadMigrations, type StorageUi } from '../storage';
 import { createBackupService } from '../storage/backups';
@@ -75,6 +76,18 @@ async function setup() {
     env: () => ({}),
     sandboxDir: () => 'C:\\sandbox',
   });
+  const queue = createRunQueue({
+    db, agents, tasks, projects, activity, logger,
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId }),
+    availability: async () => availabilityFrom(await providers.list()),
+    providerBusy: (id) => providers.busy(id),
+    routing: () => ({ profile: settings.get('routing.profile'), overrides: settings.get('routing.roleOverrides'), localModel: settings.get('routing.localModel'), maxAttempts: settings.get('routing.maxAttempts'), apiKeySet: false }),
+    localPolicy: () => Promise.resolve({ allowed: true, blocks: [], warnings: [] }),
+    recheckMs: () => 60_000,
+    confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
+    writesEnabled: false,
+  });
+  const snapshot = { at: '2026-10-24T12:00:00.000Z', cpuPercent: 12, ramFreeMiB: 40_000, ramTotalMiB: 65_000, gpus: [], gpuNote: 'nvidia-smi was not found', heavyApps: [], appsNote: '' };
   const storage = createStorageService({
     db,
     userDataDir: dir,
@@ -100,6 +113,8 @@ async function setup() {
     planning,
     agents,
     providers,
+    queue,
+    resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -398,12 +413,35 @@ describe('agent channels', () => {
     const { call, taskId } = await withTask();
     expect(await call('agents:roles')).toMatchObject({ ok: true, value: [{ id: 'planner', writeCapable: false }, { id: 'implementer', writeCapable: true }, { id: 'reviewer' }, { id: 'qa' }, { id: 'docs' }, { id: 'assets' }] });
     const request = { taskId, workflow: 'implement', includeReviewer: false, includeQa: false };
-    expect(await call('agents:preview', request)).toMatchObject({ ok: true, value: { launchUnavailable: true, steps: [{ role: 'planner', provider: 'Claude Code' }, { kind: 'approval' }, { role: 'implementer', blockedBy: expect.stringContaining('approved plan') as unknown }, { role: 'reviewer', included: false }, { role: 'qa', included: false }] } });
+    expect(await call('agents:preview', request)).toMatchObject({ ok: true, value: { writesUnavailable: true, steps: [{ role: 'planner', provider: 'Claude Code' }, { kind: 'approval' }, { role: 'implementer', blockedBy: expect.stringContaining('approved plan') as unknown }, { role: 'reviewer', included: false }, { role: 'qa', included: false }] } });
     const queued = (await call('agents:queue', request)) as { ok: true; value: { id: string; role: string; state: string }[] };
     expect(queued.value.map((r) => [r.role, r.state])).toEqual([['planner', 'queued'], ['implementer', 'queued']]);
     expect(await call('agents:queue', request)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
     expect(await call('agents:record', { runId: queued.value[0]?.id, outcome: 'completed', note: 'done by hand' })).toMatchObject({ ok: true, value: { state: 'completed' } });
     expect(await call('agents:runs', { taskId })).toMatchObject({ ok: true, value: [{ state: 'completed' }, { state: 'queued' }] });
+  });
+
+  it('the queue routes a read-only run, asks before the cloud send, runs it and keeps the answer; writers and bad input are refused', async () => {
+    const { call, taskId } = await withTask();
+    const queued = (await call('agents:queue', { taskId, workflow: 'implement', includeReviewer: false, includeQa: false })) as { ok: true; value: { id: string }[] };
+    const [planner, implementer] = queued.value.map((r) => r.id);
+    expect(await call('queue:route', { runId: planner })).toMatchObject({ ok: true, value: { provider: 'claude-code', location: 'cloud', billing: 'subscription' } });
+    mocks.claude.answer = 'Step 1: add a jump input.';
+    uiCalls.length = 0;
+    expect(await call('queue:start', { runId: planner })).toMatchObject({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(uiCalls).toContain('confirm');
+    expect(mocks.claude.requests[0]?.ownerId).toBe(planner);
+    expect(await call('agents:runs', { taskId })).toMatchObject({ ok: true, value: [{ state: 'completed', result: 'Step 1: add a jump input.' }, { state: 'queued' }] });
+    expect(await call('queue:start', { runId: implementer })).toMatchObject({ ok: false, error: { code: 'PERMISSION_REQUIRED' } });
+    expect(await call('queue:start', { runId: planner })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } }); // finished runs are tried again, never restarted
+    expect(await call('queue:start', { runId: implementer, choice: { provider: 'claude-code', model: '--dangerously-skip-permissions' } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('queue:setPriority', { runId: implementer, priority: 'urgent' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('queue:setPriority', { runId: implementer, priority: 'high' })).toMatchObject({ ok: true, value: { priority: 'high' } });
+    expect(await call('queue:view', { projectId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await call('resources:check')).toMatchObject({ ok: true, value: { verdict: { allowed: true } } });
+    expect(await call('providers:generate', { choice: { provider: 'ollama', model: 'llama3.2:1b' }, prompt: 'hi', purpose: 'agent-run' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('queue:releaseLock', { projectId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   });
 
   it('cannot be asked to start a run: there is no channel that moves a run to running, and bad input is refused', async () => {

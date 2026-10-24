@@ -6,7 +6,8 @@ import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
 import type { ProviderService } from '../providers';
-import type { AgentService, PlanningService, TaskService } from '../planning';
+import type { AgentService, PlanningService, RunQueue, TaskService } from '../planning';
+import type { ResourceReport } from '@shared/resources';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
 import { resolveInside } from '../security';
@@ -28,6 +29,9 @@ export interface HandlerServices {
   planning: PlanningService;
   agents: AgentService;
   providers: ProviderService;
+  queue: RunQueue;
+  /** A fresh resource snapshot with the local-inference verdict. */
+  resources: () => Promise<ResourceReport>;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -150,7 +154,16 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('agents:queue', (request) => services.agents.createWorkflow(request));
   ipc.handle('agents:runs', ({ taskId }) => services.agents.runs(taskId));
   ipc.handle('agents:prompt', ({ taskId, role }) => services.agents.prompt(taskId, role));
-  ipc.handle('agents:record', ({ runId, outcome, note }) => services.agents.recordOutcome(runId, outcome, note));
+  ipc.handle('agents:record', ({ runId, outcome, note }) => services.queue.record(runId, outcome, note));
+
+  ipc.handle('queue:view', ({ projectId }) => services.queue.view(projectId));
+  ipc.handle('queue:route', ({ runId, choice }) => services.queue.route(runId, choice));
+  ipc.handle('queue:start', ({ runId, choice }) => services.queue.start(runId, choice));
+  ipc.handle('queue:cancel', ({ runId }) => services.queue.cancel(runId));
+  ipc.handle('queue:setPriority', ({ runId, priority }) => services.queue.setPriority(runId, priority));
+  ipc.handle('queue:retry', ({ runId, choice }) => services.queue.retry(runId, choice));
+  ipc.handle('queue:releaseLock', ({ projectId }) => services.queue.releaseLock(projectId));
+  ipc.handle('resources:check', () => services.resources());
 
   ipc.handle('providers:list', () => services.providers.list());
   ipc.handle('providers:check', ({ provider }) => services.providers.check(provider));
@@ -161,6 +174,7 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('providers:generate', ({ choice, prompt, purpose }) => services.providers.generate(choice, prompt, purpose));
   ipc.handle('providers:suggestSteps', (input) => services.providers.suggestSteps(input));
   ipc.handle('providers:draftDocument', (input) => services.providers.draftDocument(input));
+  ipc.handle('providers:unload', ({ model }) => services.providers.unload(model));
 
   ipc.handle('storage:status', () => services.storage.status());
   ipc.handle('storage:backupNow', () => services.storage.backupNow());
