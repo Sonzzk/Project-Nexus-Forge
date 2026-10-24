@@ -11,6 +11,8 @@ export const SettingsSchema = z.object({
   'ui.density': z.enum(['comfortable', 'compact']).default('comfortable'),
   'ui.sidebarCollapsed': z.boolean().default(false),
   'ui.inspectorOpen': z.boolean().default(false),
+  /** The project the top bar and the pages are showing, or null. */
+  'projects.selectedId': z.string().max(64).nullable().default(null),
   /** Panel sizes in percent, by panel id (react-resizable-panels). */
   'ui.layout': z.record(z.string().max(40), z.number().min(0).max(100)).default({}),
 });

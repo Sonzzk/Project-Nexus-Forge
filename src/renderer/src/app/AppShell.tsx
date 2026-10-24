@@ -3,9 +3,11 @@ import { Group, Panel, Separator } from 'react-resizable-panels';
 import type { NavSection } from '@shared/feature-status';
 import { ActivityPage } from '../features/activity/ActivityPage';
 import { Dashboard } from '../features/dashboard/Dashboard';
+import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { StatusPage } from '../features/status/StatusPage';
 import { UpcomingPage } from '../features/UpcomingPage';
+import { useProjects } from '../lib/projects';
 import { useSettings } from '../lib/settings';
 import { createActionHandlers } from './actions';
 import { CommandPalette } from './CommandPalette';
@@ -16,6 +18,7 @@ import { TopBar } from './TopBar';
 
 const PAGES: Partial<Record<NavSection, ComponentType>> = {
   dashboard: Dashboard,
+  projects: ProjectsPage,
   activity: ActivityPage,
   settings: SettingsPage,
   status: StatusPage,
@@ -24,6 +27,7 @@ const PAGES: Partial<Record<NavSection, ComponentType>> = {
 export function AppShell() {
   const { settings, set } = useSettings();
   const { section, go } = useNav();
+  const { add: addProject } = useProjects();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const collapsed = settings['ui.sidebarCollapsed'];
@@ -41,8 +45,12 @@ export function AppShell() {
         toggleSidebar: () => set('ui.sidebarCollapsed', !collapsed),
         toggleInspector: () => set('ui.inspectorOpen', !inspectorOpen),
         toggleDensity: () => set('ui.density', density === 'compact' ? 'comfortable' : 'compact'),
+        addProject: () => {
+          go('projects');
+          void addProject();
+        },
       }),
-    [go, set, collapsed, inspectorOpen, density],
+    [go, set, addProject, collapsed, inspectorOpen, density],
   );
 
   // Ctrl+K opens the palette, Ctrl+B the sidebar, Ctrl+J the inspector (Cmd on macOS keyboards works too).
@@ -72,6 +80,8 @@ export function AppShell() {
         onToggleSidebar={() => handlers['action.toggle-sidebar']?.()}
         onToggleInspector={() => handlers['action.toggle-inspector']?.()}
         onOpenPalette={() => setPaletteOpen(true)}
+        onAddProject={() => handlers['action.add-project']?.()}
+        onManageProjects={() => go('projects')}
       />
       <main className="workspace">
         {inspectorOpen ? (

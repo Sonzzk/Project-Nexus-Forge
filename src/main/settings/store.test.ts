@@ -25,6 +25,7 @@ describe('settings schema', () => {
       'ui.sidebarCollapsed': false,
       'ui.inspectorOpen': false,
       'ui.layout': {},
+      'projects.selectedId': null,
     });
   });
 

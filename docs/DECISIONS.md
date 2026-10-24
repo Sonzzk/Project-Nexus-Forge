@@ -156,3 +156,11 @@ Applied migrations are recorded in a `schema_migrations` table with checksums. B
 - **Radix scroll-lock style by hash.** See ARCHITECTURE.md section 18. The alternative was style-src 'unsafe-inline', which would also allow every other inline style.
 - **Packaged builds drop the default menu** (Menu.setApplicationMenu(null)); development keeps it for developer tools. Not exercised until Step 27 packages the app (KI-009).
 - **Packages:** radix-ui, cmdk, react-resizable-panels, lucide-react, jsdom, @testing-library/react, @testing-library/dom and @testing-library/user-event at the Step 5 rows of ARCHITECTURE.md section 1.
+
+## D-031 · Step 6 project registry choices (Step 6, Accepted)
+
+- **Status is the user's choice; a missing folder is a fact.** `status` is active, paused or archived. Whether the folder exists is computed on every read (`folderExists`), so a drive that is plugged in again just works and nothing is silently changed.
+- **Priority decides the type, evidence keeps everything.** See ARCHITECTURE.md section 19. A manual override stores the type and drops the engine fields (they describe the detected type); going back to "detected" restores them from the stored detection.
+- **Real path, one key.** The registry stores the real path (links and junctions resolved) and a lower-cased key without a trailing separator, so one folder cannot be registered twice. It does not forbid a project inside another.
+- **Nothing in a project folder is created.** No `.gdcc` marker, no cache. All app data about a project lives in the app database, which Step 8 backs up.
+- **Fixtures are committed files under `test/fixtures/projects`**; tests copy one into a temp folder before registering it. The `.env` check writes its file at run time because `.env` files are git-ignored.

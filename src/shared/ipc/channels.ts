@@ -7,6 +7,11 @@ export const CHANNELS = [
   'settings:get',
   'settings:set',
   'activity:list',
+  'projects:list',
+  'projects:pickAndAdd',
+  'projects:update',
+  'projects:redetect',
+  'projects:remove',
 ] as const;
 
 export const EVENTS = ['activity:appended'] as const;

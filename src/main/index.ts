@@ -12,6 +12,7 @@ import { createActivityLog, type ActivityLog } from './logging';
 import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
+import { createProjectRegistry } from './projects';
 import { createSettingsStore, type SettingsStore } from './settings';
 import { openAppDatabase } from './storage';
 
@@ -107,7 +108,23 @@ async function startServices(): Promise<void> {
     dataDir: redactor.redact(userDataDir),
     logFile: redactor.redact(logFile),
   });
-  registerHandlers(ipc, { logger, settings, activity, appInfo });
+  const projects = createProjectRegistry({
+    db,
+    activity,
+    logger: logger.child('projects'),
+    protectedDirs: [userDataDir],
+  });
+  // The only way a folder reaches the registry: a native dialog opened here, never a path from the page.
+  const pickFolder = async (): Promise<string | undefined> => {
+    const options = { title: 'Choose a project folder', properties: ['openDirectory' as const] };
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result =
+      window === undefined
+        ? await dialog.showOpenDialog(options)
+        : await dialog.showOpenDialog(window, options);
+    return result.canceled ? undefined : result.filePaths[0];
+  };
+  registerHandlers(ipc, { logger, settings, activity, projects, pickFolder, appInfo });
   shutdown.register('ipc', 10, () => undefined); // `shutdown.isShuttingDown` already refuses new IPC calls
 
   activity.record({

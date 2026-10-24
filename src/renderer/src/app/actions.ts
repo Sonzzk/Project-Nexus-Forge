@@ -5,6 +5,7 @@ export interface ActionContext {
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleDensity: () => void;
+  addProject: () => void;
 }
 
 /**
@@ -16,6 +17,7 @@ export function createActionHandlers(context: ActionContext): Record<string, () 
     'action.toggle-sidebar': context.toggleSidebar,
     'action.toggle-inspector': context.toggleInspector,
     'action.toggle-density': context.toggleDensity,
+    'action.add-project': context.addProject,
   };
   // Every sidebar item navigates, including upcoming ones, whose page says which step builds them.
   for (const feature of FEATURES)

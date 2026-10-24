@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActivityEventSchema } from '../activity';
+import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
 import type { ChannelName } from './channels';
 
@@ -46,6 +47,18 @@ export const contract = {
       limit: z.number().int().min(1).max(500).default(50),
     }),
     response: z.array(ActivityEventSchema),
+  },
+  'projects:list': { request: noInput, response: z.array(ProjectSchema) },
+  // The folder is chosen in a native dialog opened by main; the request carries no path. null means the user cancelled.
+  'projects:pickAndAdd': {
+    request: noInput,
+    response: z.strictObject({ project: ProjectSchema.nullable() }),
+  },
+  'projects:update': { request: ProjectPatchSchema, response: ProjectSchema },
+  'projects:redetect': { request: z.strictObject({ id: z.string().max(64) }), response: ProjectSchema },
+  'projects:remove': {
+    request: z.strictObject({ id: z.string().max(64) }),
+    response: z.strictObject({ removed: z.literal(true) }),
   },
 } satisfies Record<ChannelName, { request: z.ZodType; response: z.ZodType }>;
 

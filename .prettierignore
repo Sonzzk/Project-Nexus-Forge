@@ -10,3 +10,4 @@ docs/
 *.md
 assets/
 scripts/
+test/fixtures/

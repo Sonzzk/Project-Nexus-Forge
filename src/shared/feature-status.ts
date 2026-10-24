@@ -49,7 +49,7 @@ const nav = (
 export const FEATURES: readonly FeatureStatus[] = [
   // Sidebar, in the order of spec §5.
   nav('dashboard', 'Dashboard', 'available', 5),
-  nav('projects', 'Projects', 'upcoming', 6),
+  nav('projects', 'Projects', 'available', 6),
   nav('workbench', 'AI Workbench', 'upcoming', 12),
   nav('tasks', 'Tasks and Roadmap', 'upcoming', 10),
   nav('context', 'Project Context', 'upcoming', 9),
@@ -103,7 +103,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     kind: 'action',
     label: 'Add a project',
     section: 'projects',
-    state: 'upcoming',
+    state: 'available',
     step: 6,
   },
   {
@@ -132,7 +132,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     state: 'available',
     step: 5,
   },
-  { id: 'card.projects', kind: 'card', label: 'Projects', section: 'projects', state: 'upcoming', step: 6 },
+  { id: 'card.projects', kind: 'card', label: 'Projects', section: 'projects', state: 'available', step: 6 },
   {
     id: 'card.current-task',
     kind: 'card',

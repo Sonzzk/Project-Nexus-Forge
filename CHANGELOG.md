@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 6 · Project registry (2026-10-24, tag `step-06`)
+
+### Added
+- Register existing folders as projects through a native folder picker, without moving or changing them. Type detection from real files (Unreal, Unity, Godot, Vite, other web, general code, Blender-only, unidentified) with the evidence stored and a manual override that can be undone.
+- The Projects page, a working project switcher, the dashboard Projects card, the Add a project action; pause, archive, tags, instructions per project; remove from the registry with a confirmation.
+- Schema v2 (`projects`, `project_detections`), channels `projects:*`, setting `projects.selectedId`, activity events for every change.
+- 47 new tests, including a snapshot proof that no project file changes, and 3 end-to-end tests. Decision D-031.
+
 ## Step 5 · Dashboard and UI (2026-10-24, tag `step-05`)
 
 ### Added

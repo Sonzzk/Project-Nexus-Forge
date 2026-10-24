@@ -420,3 +420,85 @@ kbd {
   font-size: 0.85em;
   line-height: 1.2;
 }
+
+/* Projects page */
+.split {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-5);
+  align-items: start;
+  margin-top: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.project-row .row {
+  flex: 1;
+  min-width: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+textarea {
+  background: var(--bg-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+}
+
+.btn--primary {
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.btn--danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
+}
+
+.evidence {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  top: 30vh;
+}
+
+.menu__separator {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--line);
+}
+
+.row--card {
+  grid-template-columns: 8px minmax(0, 1fr);
+}

@@ -1,6 +1,7 @@
 import type { ActivityEvent } from '../../src/shared/activity';
 import type { Api } from '../../src/shared/api';
 import type { IpcResult } from '../../src/shared/errors';
+import type { Project } from '../../src/shared/projects';
 import type { EventName } from '../../src/shared/ipc/channels';
 import { SETTING_KEYS, SettingsSchema, type Settings } from '../../src/shared/settings';
 
@@ -13,18 +14,23 @@ export interface FakeApi {
   calls: { channel: string; input: unknown }[];
   settings: Settings;
   events: ActivityEvent[];
+  projects: Project[];
+  /** What the native folder picker returns next: a project to add, or null for cancel. */
+  nextPick: Project | null;
   /** Delivers an event to subscribers, as main would. */
   emit(event: EventName, payload: ActivityEvent): void;
 }
 
 export function createFakeApi(
-  initial: { settings?: Partial<Settings>; events?: ActivityEvent[] } = {},
+  initial: { settings?: Partial<Settings>; events?: ActivityEvent[]; projects?: Project[] } = {},
 ): FakeApi {
   const listeners = new Map<string, Set<(payload: ActivityEvent) => void>>();
   const fake: FakeApi = {
     calls: [],
     settings: { ...SettingsSchema.parse({}), ...initial.settings },
     events: initial.events ?? [],
+    projects: initial.projects ?? [],
+    nextPick: null,
     emit: (event, payload) => listeners.get(event)?.forEach((listener) => listener(payload)),
     api: undefined as unknown as Api,
   };
@@ -63,6 +69,52 @@ export function createFakeApi(
           logFile: '~\\main.log',
         },
       });
+    if (channel === 'projects:list') return Promise.resolve({ ok: true, value: fake.projects });
+    if (channel === 'projects:pickAndAdd') {
+      const picked = fake.nextPick;
+      if (picked !== null) fake.projects = [...fake.projects, picked];
+      fake.nextPick = null;
+      return Promise.resolve({ ok: true, value: { project: picked } });
+    }
+    if (channel === 'projects:update') {
+      const patch = input as {
+        id: string;
+        name?: string;
+        status?: Project['status'];
+        typeOverride?: Project['type'] | null;
+        tags?: string[];
+        description?: string;
+        instructions?: string;
+      };
+      const found = fake.projects.find((p) => p.id === patch.id);
+      if (found === undefined)
+        return Promise.resolve({
+          ok: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'That project is not in the registry.',
+            hint: 'Reload.',
+            retryable: false,
+          },
+        });
+      const next: Project = {
+        ...found,
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.tags === undefined ? {} : { tags: patch.tags }),
+        ...(patch.description === undefined ? {} : { description: patch.description }),
+        ...(patch.instructions === undefined ? {} : { instructions: patch.instructions }),
+        ...(typeof patch.typeOverride === 'string'
+          ? { type: patch.typeOverride, typeSource: 'manual' as const }
+          : {}),
+      };
+      fake.projects = fake.projects.map((p) => (p.id === next.id ? next : p));
+      return Promise.resolve({ ok: true, value: next });
+    }
+    if (channel === 'projects:remove') {
+      fake.projects = fake.projects.filter((p) => p.id !== (input as { id: string }).id);
+      return Promise.resolve({ ok: true, value: { removed: true } });
+    }
     if (channel === 'activity:list') return Promise.resolve({ ok: true, value: fake.events });
     return Promise.resolve({
       ok: false,
@@ -87,5 +139,32 @@ export const sampleEvent = (n: number, overrides: Partial<ActivityEvent> = {}): 
   kind: 'test.event',
   severity: 'info',
   summary: `Event number ${n}`,
+  ...overrides,
+});
+
+export const sampleProject = (n: number, overrides: Partial<Project> = {}): Project => ({
+  id: `project-${n}`,
+  name: `Game ${n}`,
+  description: '',
+  type: 'godot',
+  typeSource: 'detected',
+  engine: 'Godot',
+  engineVersion: '4.3',
+  rootPath: `D:\\Games\\Game${n}`,
+  status: 'active',
+  folderExists: true,
+  tags: [],
+  instructions: '',
+  aiPrefs: {},
+  backupPrefs: {},
+  detection: {
+    type: 'godot',
+    engine: 'Godot',
+    engineVersion: '4.3',
+    confidence: 'confirmed',
+    evidence: [{ path: 'project.godot', detail: 'Godot project file, engine 4.3' }],
+  },
+  createdAt: '2026-10-24T01:00:00.000Z',
+  updatedAt: '2026-10-24T01:00:00.000Z',
   ...overrides,
 });

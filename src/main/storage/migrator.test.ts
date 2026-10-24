@@ -66,17 +66,24 @@ describe('loadMigrations', () => {
 });
 
 describe('the shipped schema', () => {
-  it('creates every Step 4 table on a fresh database and records version 1 without a backup', async () => {
+  it('creates every table on a fresh database, records the latest version and makes no backup', async () => {
     const dir = makeTempDir();
     const app = await openAppDatabase({ userDataDir: dir, appVersion: '1.2.3', logger: memoryLogger() });
     const tables = app.db
       .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .map((t) => t.name);
     expect(tables).toEqual(
-      expect.arrayContaining(['activity_events', 'process_runs', 'schema_migrations', 'settings']),
+      expect.arrayContaining([
+        'activity_events',
+        'process_runs',
+        'project_detections',
+        'projects',
+        'schema_migrations',
+        'settings',
+      ]),
     );
-    expect(app.schemaVersion).toBe(1);
-    expect(app.report).toEqual({ from: 0, to: 1 });
+    expect(app.schemaVersion).toBe(loadMigrations().length);
+    expect(app.report).toEqual({ from: 0, to: loadMigrations().length });
     expect(
       app.db.get<{ app_version: string }>('SELECT app_version FROM schema_migrations')?.app_version,
     ).toBe('1.2.3');
@@ -92,7 +99,7 @@ describe('the shipped schema', () => {
     );
     first.db.close();
     const second = await openAppDatabase({ userDataDir: dir, appVersion: '1', logger: memoryLogger() });
-    expect(second.report).toEqual({ from: 1, to: 1 });
+    expect(second.report).toEqual({ from: loadMigrations().length, to: loadMigrations().length });
     expect(second.db.all('SELECT key FROM settings')).toEqual([{ key: 'ui.density' }]);
     expect(existsSync(join(dir, 'backups'))).toBe(false);
     second.db.close();

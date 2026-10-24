@@ -3,7 +3,8 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEATURES, isUsable } from '@shared/feature-status';
-import { createFakeApi, sampleEvent, type FakeApi } from '../../../../test/mocks/fake-api';
+import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
+import { createFakeApi, sampleEvent, sampleProject, type FakeApi } from '../../../../test/mocks/fake-api';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -34,6 +35,7 @@ describe('manifest wiring', () => {
       toggleSidebar: () => calls.push('sidebar'),
       toggleInspector: () => calls.push('inspector'),
       toggleDensity: () => calls.push('density'),
+      addProject: () => calls.push('add'),
     });
     for (const feature of FEATURES.filter((f) => f.kind !== 'card' && isUsable(f))) {
       const handler = handlers[feature.id];
@@ -74,22 +76,22 @@ describe('manifest wiring', () => {
 describe('navigation', () => {
   it('opens a page for each section; an upcoming one says which step builds it and offers no controls', async () => {
     const user = await setup();
-    await user.click(within(sidebar()).getByRole('button', { name: /^Projects/ }));
-    expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy();
-    expect(screen.getByText(/arrives in Step 6/)).toBeTruthy();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Git and Changes/ }));
+    expect(screen.getByRole('heading', { name: 'Git and Changes' })).toBeTruthy();
+    expect(screen.getByText(/arrives in Step 7/)).toBeTruthy();
     expect(within(document.querySelector('.workspace') as HTMLElement).queryAllByRole('button')).toEqual([]);
     expect(
       within(sidebar())
-        .getByRole('button', { name: /^Projects/ })
+        .getByRole('button', { name: /^Git and Changes/ })
         .getAttribute('aria-current'),
     ).toBe('page');
 
     await user.click(within(sidebar()).getByRole('button', { name: 'Implementation Status' }));
     const steps = within(screen.getByRole('list', { name: 'Build steps' })).getAllByRole('listitem');
     expect(steps).toHaveLength(29);
+    expect(steps[COMPLETED_THROUGH_STEP - 1]?.textContent).toContain('Done');
+    expect(steps[COMPLETED_THROUGH_STEP]?.textContent).toContain('Next');
     expect(steps[4]?.textContent).toContain('Dashboard and UI');
-    expect(steps[4]?.textContent).toContain('Done');
-    expect(steps[5]?.textContent).toContain('Next');
   });
 
   it('moves focus with the arrow keys, Home and End', async () => {
@@ -222,14 +224,105 @@ describe('pages with real data', () => {
     ]);
     expect(document.documentElement.dataset['density']).toBe('compact');
   });
+});
 
-  it('shows the project switcher as empty and says why adding is not possible yet', async () => {
+describe('projects', () => {
+  it('says there are no projects, offers to add one, and the empty switcher still opens', async () => {
     const user = await setup();
     await screen.findByRole('heading', { name: 'Dashboard' });
+    const card = screen.getByRole('region', { name: 'Projects' });
+    expect(within(card).getByText('No projects registered yet.')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Project switcher' }));
     expect(await screen.findByText('No projects registered yet')).toBeTruthy();
-    const add = screen.getByRole('menuitem', { name: /Add a project/ });
-    expect(add.getAttribute('aria-disabled') ?? add.getAttribute('data-disabled')).not.toBeNull();
-    expect(add.textContent).toContain('Upcoming · Step 6');
+    expect(screen.getByRole('menuitem', { name: 'Add a project…' })).toBeTruthy();
+  });
+
+  it('adds a project from the switcher: the picker runs in main, the new project is selected and shown', async () => {
+    const user = await setup();
+    fake.nextPick = sampleProject(1, {
+      name: 'Backrooms',
+      type: 'unreal',
+      engine: 'Unreal Engine',
+      engineVersion: '5.4',
+    });
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    await user.click(screen.getByRole('button', { name: 'Project switcher' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Add a project…' }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Project switcher' }).textContent).toContain('Backrooms'),
+    );
+    expect(fake.calls.filter((c) => c.channel === 'projects:pickAndAdd')).toHaveLength(1);
+    // No path was sent to main: the request is empty.
+    expect(fake.calls.find((c) => c.channel === 'projects:pickAndAdd')?.input).toEqual({});
+    expect(savedSettings()).toContainEqual({ key: 'projects.selectedId', value: 'project-1' });
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+  });
+
+  it('runs the Add a project palette action', async () => {
+    const user = await setup();
+    fake.nextPick = sampleProject(2, { name: 'Palette Game' });
+    await screen.findByRole('heading', { name: 'Dashboard' });
+    await user.keyboard('{Control>}k{/Control}');
+    await user.type(await screen.findByRole('combobox', { name: 'Command palette' }), 'add a project');
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+    await vi.waitFor(() => expect(fake.projects.map((p) => p.name)).toEqual(['Palette Game']));
+  });
+
+  it('lists projects with their type, shows the evidence, and selects one', async () => {
+    const user = await setup({
+      projects: [
+        sampleProject(1, { name: 'Alpha' }),
+        sampleProject(2, { name: 'Beta', type: 'web-vite', status: 'paused', folderExists: false }),
+      ],
+    });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    const list = await screen.findByRole('list', { name: 'Registered projects' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getByText(/Paused/)).toBeTruthy();
+    expect(within(list).getByText(/folder not found/)).toBeTruthy();
+    expect(screen.getByText(/Evidence from the folder \(1\)/)).toBeTruthy();
+    await user.click(within(list).getByRole('button', { name: 'Select Beta' }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Project switcher' }).textContent).toContain('Beta'),
+    );
+    expect(within(list).getByRole('button', { name: 'Beta is selected' })).toBeTruthy();
+  });
+
+  it('edits a project: name, tags and the type override are sent, and nothing but the project id and fields travels', async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })] });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    const detail = await screen.findByRole('region', { name: 'Details of Alpha' });
+    await user.clear(within(detail).getByLabelText('Name'));
+    await user.type(within(detail).getByLabelText('Name'), 'Alpha Prime');
+    await user.type(within(detail).getByLabelText(/Tags/), 'horror, ue5');
+    await user.selectOptions(within(detail).getByLabelText('Project type'), 'custom');
+    await user.click(within(detail).getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() => expect(fake.calls.some((c) => c.channel === 'projects:update')).toBe(true));
+    expect(fake.calls.find((c) => c.channel === 'projects:update')?.input).toMatchObject({
+      id: 'project-1',
+      name: 'Alpha Prime',
+      tags: ['horror', 'ue5'],
+      typeOverride: 'custom',
+    });
+    expect(await screen.findByText('Saved.')).toBeTruthy();
+  });
+
+  it('removes a project only after a confirmation that says its folder is not touched', async () => {
+    const user = await setup({
+      projects: [sampleProject(1, { name: 'Alpha' })],
+      settings: { 'projects.selectedId': 'project-1' },
+    });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    await user.click(await screen.findByRole('button', { name: 'Remove from the registry' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('Its folder and every file in it stay exactly as they are');
+    await user.click(within(dialog).getByRole('button', { name: 'Keep it' }));
+    expect(fake.projects).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Remove from the registry' }));
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
+    await vi.waitFor(() => expect(fake.projects).toEqual([]));
+    expect(await screen.findByText(/No projects yet/)).toBeTruthy();
   });
 });
