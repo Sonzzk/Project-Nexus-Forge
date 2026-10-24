@@ -11,7 +11,29 @@ It is built with Electron, React and TypeScript (Vite), with SQLite for app data
 
 ## Status
 
-The plan and the design are done (Steps 1 and 2). There is no application code yet; Step 3 scaffolds the app. Development needs Node.js 24 LTS on Windows 11 (see [decision D-012](docs/DECISIONS.md)). [STATUS.md](docs/STATUS.md) always has the current step.
+The plan and the design are done (Steps 1 and 2) and the app is scaffolded (Step 3): a secure Electron window with a placeholder page, and working dev, build, lint, test and end-to-end commands. There are no features yet; each roadmap step adds one. Development needs Node.js 24 LTS on Windows 11 (see [decision D-012](docs/DECISIONS.md)). [STATUS.md](docs/STATUS.md) always has the current step.
+
+## Install and run (Windows)
+
+You need Node.js 24 LTS (24.15 or newer 24.x; `node -v` should print v24) and Git. In the project folder:
+
+```bash
+npm install
+npm run dev
+```
+
+`npm run dev` opens the app window with hot reload. The desktop shortcut runs `scripts\launch.cmd`, which does the same. App data (database, backups, logs) goes to `%APPDATA%\GameDevCommandCenter`.
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the app in development mode |
+| `npm run build` | Build main, preload and renderer into `out/` |
+| `npm run typecheck` | Type-check all three TypeScript projects |
+| `npm run lint` | ESLint, including the import boundaries between main, preload and renderer |
+| `npm test` | Unit, integration and component tests (Vitest) |
+| `npm run test:e2e` | Build, then run the end-to-end tests against the real Electron app (Playwright) |
+| `npm run check:docs` | Check the documents (spec hash, roadmap, requirements trace, dependency pins) and their tests |
+| `npm run format` | Format the code with Prettier |
 
 ## Where things are
 
@@ -20,8 +42,8 @@ The plan and the design are done (Steps 1 and 2). There is no application code y
 | `docs/` | Specification, roadmap, architecture, decisions, status and known issues |
 | `scripts/` | `check-docs.mjs` (documentation check) and `launch.cmd` (desktop shortcut target) |
 | `assets/icon/` | App icon |
-| `src/main/`, `src/preload/`, `src/renderer/`, `src/shared/` | App code, from Step 3 (layout in ARCHITECTURE.md section 3) |
-| `test/` | Test fixtures, mocks and end-to-end tests, from Step 3 |
+| `src/main/`, `src/preload/`, `src/renderer/`, `src/shared/` | App code (layout in ARCHITECTURE.md section 3) |
+| `test/` | Test fixtures, mocks and end-to-end tests (`test/e2e`) |
 
 App data lives outside the repository in `%APPDATA%\GameDevCommandCenter` (database, backups and logs).
 
@@ -37,4 +59,4 @@ The app is built in 29 steps, one at a time, each tagged `step-NN` in Git.
 - [Decisions](docs/DECISIONS.md), [Known issues](docs/KNOWN_ISSUES.md), [Changelog](CHANGELOG.md)
 - [CLAUDE.md](CLAUDE.md): working rules for AI coding sessions
 
-Check the documents with `node scripts/check-docs.mjs` and `node --test scripts/check-docs.test.mjs`.
+Check the documents with `npm run check:docs`.

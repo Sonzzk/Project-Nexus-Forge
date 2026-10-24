@@ -5,8 +5,21 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ## Unreleased
 
 ### Added
-- `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon. Steps 3 and 27 use it for the window and installer.
-- `scripts/launch.cmd`: desktop shortcut target. Starts the app with `npm run dev`; until Step 3 scaffolds the app it prints that the app is not built yet.
+- `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
+
+## Step 3 · Project setup and scaffolding (2026-10-24, tag `step-03`)
+
+### Added
+- The Electron 45 + React 19 + TypeScript 6 + electron-vite 6 app, written by hand in the ARCHITECTURE.md layout: `src/main`, `src/preload`, `src/renderer`, `src/shared`. It opens a window with a placeholder page; there are no features yet.
+- Secure window: context isolation, sandbox, no Node integration, `app://renderer` scheme with the CSP as header and meta tag, blocked navigation, new windows, webviews and permission requests, single-instance lock, data folder `%APPDATA%\GameDevCommandCenter` (`GDCC_USER_DATA_DIR` in dev and tests only). Empty frozen `window.api`.
+- npm scripts `dev`, `build`, `typecheck`, `lint`, `format`, `test`, `test:e2e`, `check:docs`; strict TypeScript (three projects), ESLint with import boundaries, Prettier, Vitest and Playwright configs; `.gitignore`, `.npmrc` (`engine-strict`), pinned `package.json` and the committed lockfile.
+- 23 unit tests (CSP text, renderer path resolver, navigation allowlist) and 6 end-to-end security tests on the built app.
+- Decision D-028 and known issue KI-009.
+
+### Changed
+- `scripts/launch.cmd` now starts the real app (`npm run dev`).
+- `README.md` has install and run instructions and the command table; `CLAUDE.md` quality gates use the npm scripts; ARCHITECTURE.md records what Step 3 did and where it differed from the checklist.
+- KI-001 (Node.js 20) removed: a clean install, build, tests and the app run on Node 24.22.1.
 
 ## Step 2 · System design and dependencies (2026-10-24, tag `step-02`)
 

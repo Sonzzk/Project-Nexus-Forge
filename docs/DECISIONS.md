@@ -124,3 +124,14 @@ Claude Code's docs say a `claude -p` run without `--bare` runs the project's `.c
 ## D-027 · Migrations run all-or-nothing after a verified backup (Step 2, Accepted; Step 4 builds it)
 
 Applied migrations are recorded in a `schema_migrations` table with checksums. Before migrating, the app backs up the database with `node:sqlite`'s `backup()` and runs `quick_check` on the copy; then all pending migrations run in one transaction, so a failure leaves the database exactly as it was. A database newer than the app opens read-only. An unreadable database is never replaced; the user chooses on a recovery screen.
+
+## D-028 · Step 3 scaffold choices (Step 3, Accepted)
+
+- **All packages are `devDependencies`.** electron-vite bundles main, preload and renderer, so nothing is `require`d from `node_modules` at run time and the packaged app needs no `node_modules` (Step 27). A package goes under `dependencies` only to stay external, with an ADR. Source: https://electron-vite.org/guide/dev, checked 2026-10-24.
+- **Config file names.** `eslint.config.mjs` and `vitest.config.mts`: the package has no `"type": "module"`, because electron-vite then emits CommonJS for main and the sandboxed preload, which must be CommonJS. A `.js` or `.ts` config with ESM syntax would load as CommonJS and print a Vite warning.
+- **Three type-check projects.** `tsconfig.node.json` (main, preload, shared, configs: no DOM), `tsconfig.web.json` (renderer, shared) and `tsconfig.e2e.json` (Playwright tests: DOM types, because their callbacks run in the page). `npm run typecheck` runs all three.
+- **`window.api` type** lives in `src/shared/window.d.ts`, so the renderer and the end-to-end tests see the same declaration.
+- **Missing renderer files answer 404.** `net.fetch` of a missing file rejects; the `app://` handler catches it and returns 404, which the end-to-end test covers.
+- **`webContents.getLastWebPreferences()`** exists in Electron 45 at run time but is missing from its type definitions; the end-to-end test casts it. It is the only way to assert the real window preferences from main, so the test uses it.
+- **Import boundaries are lint rules**: the renderer may not import Electron or Node modules or `main/` and `preload/` code; shared code may not import Electron or Node; `dangerouslySetInnerHTML` is banned in the renderer; `src/` may not import `test/`. A planted violation was checked to fail lint.
+- **No installs beyond the pinned packages.** The user approved Node.js 24 (D-012) and the project's own dependencies; Step 3 installed exactly the Step 3 rows of ARCHITECTURE.md section 1 and nothing machine-wide.

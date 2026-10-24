@@ -57,7 +57,7 @@ The Node.js install is decision D-012. Electron supports only the latest three s
 | @electron/fuses | 2.1.3 | MIT | 2026-10-24 | 27 | Turn off unneeded Electron features in the packaged app | https://www.electronjs.org/docs/latest/tutorial/fuses |
 <!-- DEPS:END -->
 
-Main-process code has no runtime npm dependency except Zod, and renderer libraries are bundled by Vite. Step 3 decides which packages go under `dependencies` and which under `devDependencies`, following electron-vite's externalization rules, and notes it here.
+Main-process code has no runtime npm dependency except Zod, and renderer libraries are bundled by Vite. Step 3 decided (D-028): every package is listed under `devDependencies`, because electron-vite bundles main, preload and renderer into `out/`, so the packaged app (Step 27) ships those bundles and no `node_modules`. Electron-vite only leaves a package external when it is under `dependencies`, so a package that must stay external (a native module, if one is ever added) goes there with its own ADR.
 
 ### Considered and not used
 
@@ -865,3 +865,7 @@ Checked in official docs on 2026-10-24. The owning step re-verifies the exact fl
 5. Scripts: `dev` (`electron-vite dev`), `build` (`electron-vite build`), `typecheck` (both tsconfigs with `tsc --noEmit`), `lint`, `format`, `test` (`vitest run`), `test:e2e` (build, then Playwright), `check:docs` (the docs check and its tests).
 6. Tests: an e2e test of the window's security settings, no `require` or `process` in the renderer, and the CSP. The docs check confirms `package.json` matches section 1.
 7. Make `scripts/launch.cmd` start the dev app and use `assets/icon/nexus-ai.ico` as the window icon.
+
+### What Step 3 actually did (2026-10-24)
+
+The checklist above was followed, with these differences (reasons in D-028): the ESLint config is `eslint.config.mjs` and the Vitest config is `vitest.config.mts` (the package is CommonJS, so a plain `.js` or `.ts` config would load as CommonJS and warn); `typecheck` runs a third project, `tsconfig.e2e.json`, because the end-to-end tests run code in the page and need the DOM types the main-process project must not have; end-to-end files are named `*.e2e.ts` so Vitest never picks them up; the CSP meta tag is added to `index.html` by a small Vite plugin (strict when building, with hot-reload allowances only on the dev server), so the source `index.html` has none. The security rules in section 7 are proven by `test/e2e/security.e2e.ts` (window preferences, no `require` or `process`, empty frozen `window.api`, CSP header and meta tag, inline script blocked, navigation and `window.open` blocked, traversal answered 404) and by unit tests for the CSP text, the renderer path resolver and the navigation allowlist.

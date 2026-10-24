@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+test-results/
+playwright-report/
+package-lock.json
+# Documents are written by hand; the spec must stay byte-for-byte unchanged.
+docs/
+*.md
+assets/
+scripts/

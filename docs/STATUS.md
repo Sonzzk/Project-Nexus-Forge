@@ -1,23 +1,25 @@
 # Status
 
-**Current step:** Step 2 · System design and dependencies: done (2026-10-24, tag `step-02`)
-**Next step:** Step 3 · Project setup and scaffolding (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-3--project-setup-and-scaffolding). Node.js 24.22.1 is installed (D-012), so it can start.
+**Current step:** Step 3 · Project setup and scaffolding: done (2026-10-24, tag `step-03`)
+**Next step:** Step 4 · Core application structure (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-4--core-application-structure).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
 - **Step 2.** `docs/ARCHITECTURE.md` written; every dependency verified and pinned; decisions D-011 to D-027 recorded; docs check extended to dependency pins and module owners. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (14 of 14 passed, including the seven new negative cases).
 
+- **Step 3.** Hand-written electron-vite scaffold (Electron 45, React 19, TypeScript 6, Vite 8): secure window on the `app://renderer` scheme with CSP, empty `window.api`, dev/build/typecheck/lint/test/e2e/docs scripts, README install steps. Verified by all six gates (below) on the working tree and on a clean copy of the tracked files (`npm ci`, then every gate), and by starting the app through `scripts\launch.cmd` (the window "GameDev Command Center" opened and showed the placeholder page).
+
 ## In progress
 - Nothing.
 
 ## Blocked
-- Nothing. Node.js 24.22.1 was installed after Step 2 was tagged, with the user's approval ("install it, install whatever is necessary for this project"). Nothing else is needed before Step 3: Git is present, the app has no native modules (so no C++ build tools), Electron's binary comes with `npm install` inside the project, and Playwright's Electron tests need no browser download. Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
+- Nothing. Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 3: write the scaffold by hand from ARCHITECTURE.md section 16, install the Step 3 packages at their pinned versions, build the secure window with the `app://` scheme and CSP, and add the end-to-end security test.
+- Step 4: typed IPC, logging with redaction, SQLite with migrations and backups, settings store, activity events, process runner, graceful shutdown. It also proves `node:sqlite` inside the built Electron app (KI-006).
 
 ## Application feature status
-No application code exists yet. Every feature in the spec is **not started**; the roadmap says which step builds each one.
+The app opens a window with a placeholder page. Every feature in the spec is **not started**; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -36,11 +38,11 @@ No application code exists yet. Every feature in the spec is **not started**; th
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
 
-## Handoff: Step 2
-- **Requested:** verify and pin current dependency versions from official sources; settle the Node.js 20 end-of-life question by recommending a version and asking before installing; write the detailed architecture (modules, interfaces, IPC and security model, data model, testing strategy); expand the README; record each choice as an ADR. No app code.
-- **Changed:** added `docs/ARCHITECTURE.md`; extended `scripts/check-docs.mjs` and `scripts/check-docs.test.mjs`; updated `README.md`, `CLAUDE.md`, `docs/DECISIONS.md` (D-003 accepted, D-011 to D-027), `docs/KNOWN_ISSUES.md` (KI-001 updated, KI-006 to KI-008), `docs/ROADMAP.md` (Step 3 scope), `CHANGELOG.md` and this file. The other thread's icon, `scripts/launch.cmd` and its notes were left untouched.
-- **Verified:** versions, licenses and engine ranges from the npm registry; Electron's schedule, bundled Node and Chromium from releases.electronjs.org; the Node schedule from nodejs/Release; `node:sqlite` stability from the Node 24 docs and Electron PR #47706; Forge's experimental Vite status, typescript-eslint's TypeScript range, Playwright's Electron support, electron-vite's layout, Electron's sandbox and security checklist, Node's `.cmd` and `kill()` behavior, Claude Code's headless mode and Codex's `exec` mode from their official docs (all on 2026-10-24, sources in ARCHITECTURE.md and DECISIONS.md). The winget installer's SHA-256 matches nodejs.org's SHASUMS256.txt. Docs check passed; 14 of 14 tests passed.
-- **Unfinished:** nothing in Step 2. Node.js 24.22.1 was installed after the tag (see Blocked). Nothing was executed against Electron itself: `node:sqlite` inside Electron 45 and the bundler's handling of it are proven in Step 3 or 4 (KI-006).
-- **Known risks:** ARCHITECTURE.md section 15, especially `node:sqlite` being a release candidate (KI-006), experimental Playwright Electron support (KI-007), Claude Code project hooks under `-p` (D-026) and the old Claude Code version (KI-008). The user has not yet said whether to keep the table's step order or the spec's phase order (D-006); the roadmap keeps the table order.
-- **Relevant files:** `docs/ARCHITECTURE.md` (sections 1, 3, 6, 7 and 16 for Step 3), `docs/DECISIONS.md` (D-011 to D-027), `docs/ROADMAP.md` (Step 3 block).
-- **Next task:** Step 3 · Project setup and scaffolding.
+## Handoff: Step 3
+- **Requested:** a minimal Electron + React + TypeScript + Vite app that launches on Windows with secure defaults and working dev, test, lint and build commands; the desktop shortcut opens it.
+- **Changed:** added `package.json` and `package-lock.json` (exact pins, all `devDependencies`, D-028), `.npmrc`, `.gitignore`, `.prettierrc`, `.prettierignore`, `electron.vite.config.ts`, `eslint.config.mjs`, `vitest.config.mts`, `playwright.config.ts`, `tsconfig.json` and the `node`, `web` and `e2e` projects; `src/main` (`index.ts`, `app/window.ts`, `app/protocol.ts`, `app/navigation.ts`, `app/renderer-path.ts`), `src/preload/index.ts`, `src/renderer` (placeholder page), `src/shared` (`csp.ts`, `api.ts`, `window.d.ts`); tests `src/**/*.test.ts` and `test/e2e/security.e2e.ts`; updated `scripts/launch.cmd`, `README.md`, `CLAUDE.md` (gates), ARCHITECTURE.md (what Step 3 did), D-028, KI-007 and KI-009, KI-001 removed, `CHANGELOG.md` and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `npm run lint` (a planted `node:fs` import and `dangerouslySetInnerHTML` in the renderer both failed lint), `npm test` (23 of 23), `npm run build`, `npm run check:docs` (docs check passed, 14 of 14, including the package.json versus pin comparison), `npm run test:e2e` (6 of 6: window preferences, no `require`/`process`/`module`/`Buffer`, `app://` origin, empty frozen `window.api`, CSP header and meta tag, inline script blocked, navigation and `window.open` blocked, traversal and missing files answer 404). A clean copy of the tracked files passed all of it after `npm ci`. `scripts\launch.cmd` started the dev app and its window opened.
+- **Unfinished:** nothing in Step 3. `node:sqlite` is not exercised yet (Step 4 does, KI-006). The packaged-app icon and fuses are Step 27. The default Electron menu is still there (KI-009).
+- **Known risks:** Electron 45.0.0 is a new major (re-check before release, Step 27); Playwright's Electron support is experimental (KI-007) but worked; `getLastWebPreferences()` is untyped in Electron 45 (D-028).
+- **Relevant files:** `src/main/app/window.ts` (window preferences and guards), `src/main/app/protocol.ts`, `src/shared/csp.ts`, `test/e2e/security.e2e.ts`, `electron.vite.config.ts`.
+- **Next task:** Step 4 · Core application structure.

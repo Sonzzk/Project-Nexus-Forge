@@ -46,7 +46,7 @@ This repository builds **GameDev Command Center**, a local-first Windows desktop
 ## Quality gates (before calling a task done)
 
 1. Check the behavior against the step's acceptance criteria.
-2. Run the tests and static checks. Today that is `node scripts/check-docs.mjs` and `node --test scripts/check-docs.test.mjs`. From Step 3 on: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run check:docs`, plus `npm run test:e2e` when a change touches the window, preload, IPC or startup. Update this list when commands change.
+2. Run the tests and static checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run check:docs`, plus `npm run test:e2e` when a change touches the window, preload, IPC or startup. Update this list when commands change.
 3. Start or build the app when practical and try the feature.
 4. Check for regressions and accidental damage (`git status`, `git diff`).
 5. Update the progress notes (below) and record limitations.

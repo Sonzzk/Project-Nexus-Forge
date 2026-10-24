@@ -2,11 +2,6 @@
 
 Verified bugs, limitations and workarounds. Remove an entry only when the fix is tested; say which step fixed it.
 
-## KI-001 · Installed Node.js is end-of-life and too old for current Vite (found in Step 1, fixed in Step 2)
-
-The PC has Node.js v20.18.1 (checked 2026-10-24). The Node.js release schedule lists the v20 line as end-of-life on 2026-04-30 (https://github.com/nodejs/Release, schedule.json), and the Vite guide (v8.3.4, checked 2026-10-24) says "Vite requires Node.js version 20.19+, 22.12+". The scaffold in Step 3 will not install or run on this Node version.
-Step 2 decided on Node.js 24.22.1 LTS (D-012) and, with the user's approval, installed it on 2026-10-24 (`node -v` shows v24.22.1; the docs check and its 14 tests pass on it). This entry stays until Step 3 confirms a clean install of the app on it.
-
 ## KI-002 · GitHub CLI is not installed (found in Step 1, accepted)
 
 `gh` is not on PATH. Pushing works through Git with the Git Credential Manager, so the build does not need it. Tasks that would use `gh` (pull requests, repository settings) need it installed first, with the user's approval.
@@ -30,7 +25,12 @@ Node 24's docs mark `node:sqlite` as stability 1.2, "Release candidate" (since 2
 ## KI-007 · Playwright's Electron support is experimental (found in Step 2, accepted)
 
 Playwright's docs say it "has experimental support for Electron automation" (Electron v21 and later). End-to-end tests stay few and focused on what only the real app can show (window security, startup, persistence across restarts); logic is tested with Vitest (D-019).
+Step 3 checked it: Playwright 1.64.1 launches and drives the built Electron 45 app, and the six end-to-end security tests pass. It needs the app built first (`npm run test:e2e` does that).
 
 ## KI-008 · Claude Code 2.1.197 is older than the documented behavior (found in Step 2, open)
 
 The installed Claude Code is 2.1.197 (Step 1 check). The current headless docs describe options added later, for example `--permission-prompts` (2.1.259 or later) and `-p` runs starting in Manual mode (2.1.302 or later). Step 12 must detect the version and derive capabilities from it instead of assuming the documented flags exist. Updating Claude Code is the user's choice.
+
+## KI-009 · The window shows Electron's default menu bar (found in Step 3, open)
+
+The Step 3 window has Electron's default menu (File, Edit, View, Window). In a development run it also offers developer tools; packaged builds have developer tools off (`devTools: !app.isPackaged`). Step 5 builds the real shell and decides what the menu contains (or removes it).
