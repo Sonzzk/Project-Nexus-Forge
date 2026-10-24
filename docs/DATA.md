@@ -41,6 +41,7 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `agent_run_transitions` | 6 | run (cascade), from and to state, time, reason | The state history. |
 | `provider_checks` | 7 | provider, time, status, version, message, hint, details, last successful request | What the last check found; derived, so it is not exported. No credentials. |
 | `writer_locks` | 8 | project (primary key, cascade), run, time taken, working folder | One writer per project. Kept across restarts until the person releases a lock left by an interrupted run; not exported, because a lock only means something on the PC where that run ran. |
+| `usage_log` | 9 | project and task (cleared if deleted, the row stays), run, purpose, provider, model, local or cloud, status, start and end time, input and output counts, cost estimate, reason | One row per request really sent, and one per launch a limit stopped. Counts and cost are empty unless the provider returned them. |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 
@@ -69,7 +70,7 @@ At start-up the database gets an integrity check. If it fails (`DB_CORRUPT`) or 
 
 Format `gdcc-export`, `formatVersion` 1: `{ format, formatVersion, appVersion, schemaVersion, exportedAt, tables: { <table id>: [ row, ... ] } }`. Rows are plain objects with one field per column.
 
-Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `milestones`, `tasks`, `task_dependencies`, `task_notes`, `risks`, `milestone_snapshots`, `agent_runs`, `agent_run_transitions`, `activity_events`. Audits are left out because they can be run again.
+Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `milestones`, `tasks`, `task_dependencies`, `task_notes`, `risks`, `milestone_snapshots`, `agent_runs`, `agent_run_transitions`, `usage_log`, `activity_events`. Audits are left out because they can be run again.
 
 Import rules:
 

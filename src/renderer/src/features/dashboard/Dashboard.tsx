@@ -4,6 +4,7 @@ import { STATUS_TEXT } from '@shared/providers';
 import { ROLE_LABELS, STATUS_LABELS } from '@shared/tasks';
 import { RUN_STATE_LABELS } from '@shared/agents';
 import { useQueue } from '../../lib/queue';
+import { describeUsage, limitText, useUsage } from '../../lib/usage';
 import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
 import { useNav } from '../../app/navigation';
@@ -137,6 +138,43 @@ function AgentSessionsCard() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** What the app sent today, against the launch limits. Numbers appear only where a provider returned them. */
+function UsageCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const { summary } = useUsage(selected?.id);
+  return (
+    <section className="card" aria-label="Usage and limits" data-feature="card.usage">
+      <div className="card__head">
+        <h2>Usage and limits</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      {summary === undefined ? (
+        <p className="empty">Loading…</p>
+      ) : (
+        <dl className="facts">
+          <dt>Sent today</dt>
+          <dd>
+            {summary.today.launches} ({summary.today.cloudLaunches} to the cloud){summary.today.blocked > 0 && `, ${summary.today.blocked} stopped by a limit`}
+          </dd>
+          <dt>Cloud launches</dt>
+          <dd>{limitText(summary.limits.perDay)} today</dd>
+          {summary.limits.perProject !== null && (
+            <>
+              <dt>This project</dt>
+              <dd>{limitText(summary.limits.perProject)} today</dd>
+            </>
+          )}
+          <dt>Usage</dt>
+          <dd>{describeUsage(summary.today)}</dd>
+        </dl>
+      )}
     </section>
   );
 }
@@ -376,6 +414,7 @@ export function Dashboard() {
         <GitCard />
         <HandoffCard />
         <AgentSessionsCard />
+        <UsageCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

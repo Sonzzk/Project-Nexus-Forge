@@ -7,7 +7,8 @@ import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
 import { allowedNext } from '@shared/tasks';
 import type { AgentRun } from '@shared/agents';
 import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
-import { attachProviders, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
+import { attachProviders, emptyUsage, emptyWindow, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
+import type { UsageRow } from '@shared/usage';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
@@ -949,6 +950,52 @@ describe('integrations and AI help', () => {
     expect(within(codex).getByText('Not installed')).toBeTruthy();
     expect(within(codex).getByText(/It is optional/)).toBeTruthy();
     for (const card of [ollama, claude, codex]) expect(within(card).getByText('Unavailable from this provider')).toBeTruthy();
+  });
+
+  const usageRow = (n: number, overrides: Partial<UsageRow> = {}): UsageRow => ({
+    id: `u${n}`, projectId: 'project-1', projectName: 'Alpha', taskId: null, taskTitle: 'Add jumping', runId: null, purpose: 'agent-run', provider: 'claude-code', model: '', location: 'cloud', status: 'completed',
+    startedAt: '2026-10-24T10:00:00.000Z', endedAt: '2026-10-24T10:00:05.000Z', inputCount: null, outputCount: null, costUsdEstimate: null, reason: '', ...overrides,
+  });
+
+  it('logs what was sent: usage appears only where the provider returned it, and a missing number says so instead of showing zero', async () => {
+    await openIntegrations({
+      usageRows: [usageRow(1, { inputCount: 1200, outputCount: 340, costUsdEstimate: 0.0412 }), usageRow(2, { provider: 'codex', taskTitle: 'Fix dash' }), usageRow(3, { status: 'blocked', reason: 'The daily limit of 2 cloud launches is used up (Claude Code was not started).' })],
+      usage: { ...emptyUsage, today: { ...emptyWindow, launches: 2, cloudLaunches: 2, blocked: 1, reported: 1, unreported: 1, inputCount: 1200, outputCount: 340, costUsdEstimate: 0.0412 }, limits: { ...emptyUsage.limits, perDay: { limit: 2, used: 2 } } },
+    });
+    const panel = await screen.findByRole('region', { name: 'Usage and limits' });
+    const table = await within(panel).findByRole('table', { name: 'Recent requests' });
+    expect(within(table).getByText('1,200 in / 340 out · $0.0412 (estimate)')).toBeTruthy();
+    expect(within(table).getAllByText('Unavailable from this provider')).toHaveLength(1); // the Codex row; the blocked row shows a dash
+    expect(within(table).getByText(/The daily limit of 2 cloud launches is used up/)).toBeTruthy();
+    expect(within(panel).queryByText(/\b0 in \/ 0 out/)).toBeNull();
+    const summary = within(panel).getByLabelText('Usage summary');
+    expect(within(summary).getByText('2 sent (2 to the cloud), 1 stopped by a limit')).toBeTruthy();
+    expect(within(summary).getByText(/1 sent without a report/)).toBeTruthy();
+    expect(within(summary).getByText('2 of 2 used')).toBeTruthy();
+  });
+
+  it('shows no usage numbers at all before anything was sent, and changes a limit through the settings', async () => {
+    const user = await openIntegrations();
+    const panel = await screen.findByRole('region', { name: 'Usage and limits' });
+    expect(await within(panel).findByText('Nothing has been sent yet.')).toBeTruthy();
+    expect(within(panel).getAllByText('Nothing sent yet').length).toBeGreaterThan(0);
+    const input = within(panel).getByLabelText('Cloud launches per day (0 = no limit)');
+    await user.clear(input);
+    await user.type(input, '7');
+    expect(fake.calls.filter((c) => c.channel === 'settings:set').at(-1)?.input).toEqual({ key: 'limits.cloudPerDay', value: 7 });
+    await user.clear(within(panel).getByLabelText('Attempts per run'));
+    await user.type(within(panel).getByLabelText('Attempts per run'), '2');
+    expect(fake.calls.filter((c) => c.channel === 'settings:set').at(-1)?.input).toEqual({ key: 'routing.maxAttempts', value: 2 });
+  });
+
+  it('puts the day\'s sends and limits on the dashboard', async () => {
+    const user = await openIntegrations({ usage: { ...emptyUsage, today: { ...emptyWindow, launches: 3, cloudLaunches: 1, reported: 0, unreported: 1 }, limits: { ...emptyUsage.limits, perDay: { limit: 20, used: 1 }, perProject: { limit: 10, used: 1 } } } });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const card = await screen.findByRole('region', { name: 'Usage and limits' });
+    expect(within(card).getByText('3 (1 to the cloud)')).toBeTruthy();
+    expect(within(card).getByText('1 of 20 used today')).toBeTruthy();
+    expect(within(card).getByText('1 of 10 used today')).toBeTruthy();
+    expect(within(card).getByText('Unavailable from this provider')).toBeTruthy();
   });
 
   it('checks again on request and shows the new answer', async () => {

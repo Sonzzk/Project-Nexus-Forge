@@ -20,6 +20,7 @@ import {
 import type { ActivityLog, Logger, Redactor } from '../logging';
 import type { ProjectRegistry } from '../projects';
 import type { Db } from '../storage';
+import type { UsageService } from '../usage';
 import type { ProviderAdapter } from './types';
 
 // The provider service (spec §9, §12): remembers what each provider last reported, runs one request at a time, and makes the
@@ -48,6 +49,8 @@ export interface ProviderService {
   busy(provider: ProviderId): string | undefined;
   /** Asks Ollama to release a model from memory (keep_alive 0, its documented way). */
   unload(model: string): Promise<{ unloaded: true }>;
+  /** Throws LIMIT_REACHED (and records it) when starting this run would pass a launch limit (Step 14). The queue calls it before a run waits to start. */
+  checkLaunch(input: { provider: ProviderId; projectId: string; taskId: string | null; runId: string }): void;
 }
 
 export interface AgentRequest {
@@ -61,6 +64,8 @@ export interface AgentRequest {
   onApproved: () => void;
   /** The run that owns the program, so the process runner refuses a second program for it. */
   ownerId: string;
+  /** The run's task, for the usage log and the per-task limit. */
+  taskId: string | null;
 }
 
 interface RequestExtra {
@@ -70,6 +75,9 @@ interface RequestExtra {
   signal?: AbortSignal;
   onApproved?: () => void;
   ownerId?: string;
+  /** What the usage log and the launch limits attribute the request to. */
+  projectId?: string;
+  taskId?: string | null;
 }
 
 export interface ProviderServiceOptions {
@@ -77,6 +85,7 @@ export interface ProviderServiceOptions {
   adapters: Record<ProviderId, ProviderAdapter>;
   projects: ProjectRegistry;
   activity: ActivityLog;
+  usage: UsageService;
   logger: Logger;
   redactor: Redactor;
   confirm: Confirm;
@@ -103,7 +112,7 @@ interface Row {
 }
 
 export function createProviderService(options: ProviderServiceOptions): ProviderService {
-  const { db, adapters, projects, activity, logger, redactor, confirm } = options;
+  const { db, adapters, projects, activity, usage, logger, redactor, confirm } = options;
   const now = options.now ?? (() => new Date());
   const active = new Map<ProviderId, { controller: AbortController; label: string; queued: boolean }>();
   const checking = new Map<ProviderId, Promise<ProviderStatus>>(); // a second look at a provider joins the one already under way
@@ -207,7 +216,10 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     if (known.status === 'not-installed') throw new AppError('TOOL_NOT_INSTALLED', `${label} is not installed.`, { hint: known.hint || 'Install it, then check again.' });
     if (id === 'ollama' && choice.model === '') throw new AppError('INVALID_INPUT', 'Choose an Ollama model first.', { hint: 'Pick one on the Integrations page.' });
 
-    if (leavesThePc(id)) {
+    const launch = { provider: id, purpose, model: choice.model, location: leavesThePc(id) ? ('cloud' as const) : ('local' as const), projectId: extra.projectId, taskId: extra.taskId ?? undefined, runId: extra.ownerId };
+    // Limits come before the confirmation: the person is never asked to approve something a limit will stop.
+    usage.enforce(launch);
+    if (launch.location === 'cloud') {
       const env = options.env();
       const billing = id === 'claude-code' && (env['ANTHROPIC_API_KEY'] ?? '') !== '' ? '\n\nWarning: ANTHROPIC_API_KEY is set on this PC, so Claude Code may bill your API account instead of your subscription.' : '';
       const ok = await confirm({
@@ -222,15 +234,18 @@ export function createProviderService(options: ProviderServiceOptions): Provider
     const started = Date.now();
     return exclusive(id, `${label} request`, async (signal) => {
       extra.onApproved?.(); // the queue moves its run to running here; if that refuses, nothing is sent
+      const usageId = usage.begin(launch);
       try {
         const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }) });
         markSuccess(id);
+        usage.finish(usageId, { status: 'completed', usage: output.usage });
         const truncated = output.text.length > MAX_OUTPUT;
         activity.record({ kind: 'provider.generated', severity: 'info', summary: `${label} answered a ${purpose.replace('-', ' ')} request (${output.text.length.toLocaleString('en-US')} characters).`, details: { provider: id, model: choice.model, purpose, promptChars: text.length, outputChars: output.text.length, usageReported: output.usage !== null } });
         return { sent: true, text: truncated ? output.text.slice(0, MAX_OUTPUT) : output.text, provider: id, model: choice.model, elapsedMs: Date.now() - started, truncated, usage: output.usage };
       } catch (error) {
         const e = error instanceof AppError ? error : new AppError('TOOL_FAILED', `${label} failed.`, { cause: error, hint: 'Details are in the log.' });
         logger.warn('provider request failed', { provider: id, code: e.code, message: e.message });
+        usage.finish(usageId, { status: e.code === 'CANCELLED' ? 'cancelled' : 'failed', reason: redactor.redact(e.message) });
         activity.record({ kind: 'provider.failed', severity: e.code === 'CANCELLED' ? 'info' : 'warning', summary: `${label}: ${e.message}`, details: { provider: id, code: e.code, purpose } });
         throw e;
       }
@@ -305,6 +320,9 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       return { unloaded: true };
     },
 
+    checkLaunch: ({ provider, projectId, taskId, runId }) =>
+      usage.enforce({ provider, purpose: 'agent-run', model: '', location: leavesThePc(provider) ? 'cloud' : 'local', projectId, taskId: taskId ?? undefined, runId }),
+
     generate: (choice, prompt, purpose) => runRequest(choice, prompt, purpose, { label: 'This request' }),
 
     async suggestSteps({ projectId, choice, title, description }) {
@@ -318,7 +336,7 @@ export function createProviderService(options: ProviderServiceOptions): Provider
         `Feature: ${redactor.redact(title)}`,
         `Description: ${redactor.redact(description) || '(none given)'}`,
       ].join('\n\n');
-      const result = await runRequest(choice, prompt, 'task-breakdown', { label: 'Suggesting steps' });
+      const result = await runRequest(choice, prompt, 'task-breakdown', { label: 'Suggesting steps', projectId });
       if (!result.sent) return { sent: false, steps: [], provider: result.provider, model: result.model };
       const steps = parseSuggestedSteps(result.text);
       if (steps === undefined)
@@ -336,18 +354,18 @@ export function createProviderService(options: ProviderServiceOptions): Provider
         `Instruction: ${redactor.redact(instruction) || '(none)'}`,
         `Existing text:\n${redactor.redact(currentText).slice(0, 8000) || '(none)'}`,
       ].join('\n\n');
-      return runRequest(choice, prompt, 'document-draft', { label: 'Drafting a document' });
+      return runRequest(choice, prompt, 'document-draft', { label: 'Drafting a document', projectId });
     },
 
     async runInProject({ projectId, choice, prompt }) {
       const p = project(projectId);
       if (choice.provider === 'ollama') throw new AppError('UNSUPPORTED', 'Ollama answers prompts; it does not run in a project folder.', { hint: 'Use Claude Code or Codex for project sessions.' });
-      return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', detail: inProject(p.rootPath, choice.provider) });
+      return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', projectId, detail: inProject(p.rootPath, choice.provider) });
     },
 
-    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId }) {
+    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId, taskId }) {
       const p = project(projectId);
-      const extra = { label: 'This agent run', signal, onApproved, ownerId };
+      const extra = { label: 'This agent run', signal, onApproved, ownerId, projectId, taskId };
       // Ollama only answers the text it is given; the coding agents run read-only in the project folder.
       if (choice.provider === 'ollama') return runRequest(choice, prompt, 'agent-run', { ...extra, detail: note });
       return runRequest(choice, prompt, 'agent-run', { ...extra, cwd: p.rootPath, detail: `${note}\n\n${inProject(p.rootPath, choice.provider)}` });

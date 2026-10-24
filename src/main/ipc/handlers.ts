@@ -10,6 +10,7 @@ import type { AgentService, PlanningService, RunQueue, TaskService } from '../pl
 import type { ResourceReport } from '@shared/resources';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
+import type { UsageService } from '../usage';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
 import type { Ipc } from './handle';
@@ -30,6 +31,7 @@ export interface HandlerServices {
   agents: AgentService;
   providers: ProviderService;
   queue: RunQueue;
+  usage: UsageService;
   /** A fresh resource snapshot with the local-inference verdict. */
   resources: () => Promise<ResourceReport>;
   git: GitService;
@@ -164,6 +166,8 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('queue:retry', ({ runId, choice }) => services.queue.retry(runId, choice));
   ipc.handle('queue:releaseLock', ({ projectId }) => services.queue.releaseLock(projectId));
   ipc.handle('resources:check', () => services.resources());
+  ipc.handle('usage:summary', ({ projectId }) => services.usage.summary(projectId));
+  ipc.handle('usage:list', ({ projectId, limit }) => services.usage.list({ projectId, limit }));
 
   ipc.handle('providers:list', () => services.providers.list());
   ipc.handle('providers:check', ({ provider }) => services.providers.check(provider));

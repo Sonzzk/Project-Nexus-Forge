@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 13 · Agent orchestration and routing: done (2026-10-24, tag `step-13`)
-**Next step:** Step 14 · Usage tracking and limits (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-14--usage-tracking-and-limits).
+**Current step:** Step 14 · Usage tracking and limits: done (2026-10-24, tag `step-14`)
+**Next step:** Step 15 · Safe execution and permissions (Sonnet · High, changed from Opus at the user's request), see [ROADMAP.md](ROADMAP.md#step-15--safe-execution-and-permissions).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -18,6 +18,7 @@
 - **Step 11.** Six agent roles (only the implementer can write), the nine run states with a tested state machine, workflow templates with optional reviewer and QA steps, queued run records, prompt preview and the Agent work section of the task detail; no program is started (ARCHITECTURE.md section 24, D-036). Verified by all six gates.
 - **Step 12.** Provider contract, Ollama / Claude Code / Codex CLI adapters, the Integrations page, a dashboard connectivity card, and AI-assisted step suggestions and document drafts that are only ever previewed (ARCHITECTURE.md section 25, D-037). Verified by all six gates and by live status checks on this PC (below).
 - **Step 13.** Routing profiles with per-role and per-run choices, the run queue (priorities, holds with reasons, one run per provider, duplicate-launch refusal, cancel of owned programs only), the per-project writer lock that survives restarts, bounded and confirmed retries, the resource monitor and the local-inference policy, the AI Workbench and the Active agent sessions card (ARCHITECTURE.md section 26, D-038). Verified by all six gates (below).
+- **Step 14.** The local usage log (`usage_log`: task, project, provider, model, times, status, and token counts or a cost estimate only when the provider returned them), launch limits per day, project and task checked before the confirmation, the Usage and limits section on the Integrations page and a dashboard card (ARCHITECTURE.md section 27, D-039). Verified by all six gates (below).
 
 ## In progress
 - Nothing.
@@ -27,7 +28,7 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 14 (Sonnet): the usage log (task, provider, model, times, status, and usage only when a provider returns it), configurable launch limits per day, project and task enforced before a run starts, and a usage page with a dashboard summary. It builds on the queue's `request`/`launch` path and the `route_json` each run keeps.
+- Step 15: permission scopes with approvals stored (what, where, when), the pre-write gate (Git status, dirty-tree warning, change scope, confirmation, checkpoint), approved commands with a destructive-pattern block, secret protection, and only then write-capable Claude Code and Codex runs (`writesEnabled` in `src/main/index.ts`, `action.write-run` in the manifest). It builds on the queue's writer lock and `checkWrites`.
 
 ## Application feature status
 The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
@@ -56,6 +57,15 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 14
+- **Requested:** an honest local usage log (task, provider, model if known, times, status, usage or cost only when an authorized source returns it), provider-reported usage parsed only where documented, configurable limits on cloud launches per day, project and task and on retries enforced before launch with a clear reason, a usage page and dashboard summary, never switching to metered billing.
+- **Changed:** `src/shared/usage.ts`, `src/main/usage/` (service, export, tests), migration `0009_usage.sql`, `ProviderService` (logs every send; `checkLaunch`; `taskId` on agent requests), `RunQueue` (`enforceLimits` at start and retry; `taskId` in the execute request), Codex usage parsing in `providers/cli.ts`, channels `usage:summary` and `usage:list`, settings `limits.cloudPerDay|cloudPerProjectPerDay|cloudPerTask`, `UsagePanel` on the Integrations page, the dashboard card `card.usage`, `test/e2e/usage.e2e.ts`, test helpers (`usage` on the mock provider, usage fakes); ARCHITECTURE.md section 27, D-039, KI-018, DATA.md, CHANGELOG and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (826 of 826), `build`, `check:docs` and `test:e2e` (39 of 39, including rows with and without reported usage in the real app against a stand-in Ollama and the log and limits after a restart). No cloud request was sent and no usage was spent.
+- **Unfinished:** nothing in Step 14. Not built on purpose: retention limits for the log (Step 17), a quota meter (providers do not expose one), per-model price tables (would be invented numbers).
+- **Known risks:** limits count the app's own launches only; Codex usage parsing follows the documented event but has never run live; the 20 / 10 / 5 defaults are guesses the person can change.
+- **Relevant files:** `src/main/usage/service.ts`, `src/main/providers/service.ts`, `src/renderer/src/features/integrations/UsagePanel.tsx`.
+- **Next task:** Step 15 · Safe execution and permissions.
 
 ## Handoff: Step 13
 - **Requested:** routing profiles (Manual, Local First, Balanced, Cloud First) with per-role provider and model choices and the route and known cost shown before cloud work; a run queue with priorities, cancellation and duplicate-launch prevention; a per-project single-writer lock that survives restarts; read-only runs alongside when safe; bounded timeouts and retries with approval before escalating or repeating a failed cloud call; a resource monitor (CPU, RAM, nvidia-smi GPU and VRAM, configurable interval, graceful absence) and the local-inference policy (modes, thresholds, heavy-workload holds, pause and cancel, documented Ollama unloading, never stopping other programs).

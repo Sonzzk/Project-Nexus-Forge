@@ -1,5 +1,5 @@
 import { AppError } from '../../src/shared/errors';
-import { PROVIDER_LABELS, PROVIDER_LOCATION, QUOTA_UNAVAILABLE, type OllamaModel, type ProviderId, type ProviderStatus, type PullProgress } from '../../src/shared/providers';
+import { PROVIDER_LABELS, PROVIDER_LOCATION, QUOTA_UNAVAILABLE, type OllamaModel, type ProviderId, type ProviderStatus, type PullProgress, type Usage } from '../../src/shared/providers';
 import type { GenerateRequest, ProviderAdapter, ProviderOutput } from '../../src/main/providers';
 
 // A scripted provider for tests. It exists only under test/ (ARCHITECTURE.md section 14): the app never ships a mock provider
@@ -16,6 +16,8 @@ export interface MockProvider extends ProviderAdapter {
   /** Makes `generate` wait for an abort (to test cancelling and "one at a time"). */
   hold: boolean;
   failWith: AppError | undefined;
+  /** What the next `generate` reports as usage; null means the provider returned none. */
+  usage: Usage | null;
   modelList: OllamaModel[];
 }
 
@@ -42,6 +44,7 @@ export function createMockProvider(id: ProviderId, overrides: Partial<Pick<MockP
     answer: 'OK',
     hold: false,
     failWith: undefined,
+    usage: null,
     modelList: [],
     ...overrides,
     detect() {
@@ -73,7 +76,7 @@ export function createMockProvider(id: ProviderId, overrides: Partial<Pick<MockP
         });
       const text = typeof mock.answer === 'function' ? mock.answer(request) : mock.answer;
       request.onText?.(text);
-      return { text, usage: null };
+      return { text, usage: mock.usage };
     },
   };
   return mock;

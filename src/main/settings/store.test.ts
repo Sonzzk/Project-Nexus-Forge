@@ -48,6 +48,9 @@ describe('settings schema', () => {
       'inference.holdForHeavyApps': true,
       'inference.keepAliveMinutes': 5,
       'inference.monitorIntervalSeconds': 30,
+      'limits.cloudPerDay': 20,
+      'limits.cloudPerProjectPerDay': 10,
+      'limits.cloudPerTask': 5,
     });
   });
 

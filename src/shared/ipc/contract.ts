@@ -15,6 +15,7 @@ import {
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
 import { ResourceReportSchema } from '../resources';
+import { UsageListRequestSchema, UsageRowSchema, UsageSummarySchema } from '../usage';
 import { RouteSchema } from '../routing';
 import {
   GENERATE_PURPOSES,
@@ -204,6 +205,9 @@ export const contract = {
   'queue:releaseLock': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ released: z.boolean() }) },
   // A fresh look at CPU, RAM, GPU and running editors, with the local-inference verdict. Nothing is changed.
   'resources:check': { request: noInput, response: ResourceReportSchema },
+  // The local usage log (Step 14). Read-only: rows are written by main when a request is sent or a limit stops one.
+  'usage:summary': { request: z.strictObject({ projectId: z.string().max(64).optional() }), response: UsageSummarySchema },
+  'usage:list': { request: UsageListRequestSchema, response: z.array(UsageRowSchema) },
   // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
   // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.
   'providers:list': { request: noInput, response: z.array(ProviderStatusSchema) },

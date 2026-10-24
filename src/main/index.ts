@@ -19,6 +19,7 @@ import { createProjectRegistry, projectTables } from './projects';
 import { createClaudeCodeAdapter, createCodexAdapter, createOllamaAdapter, createProviderService, locateProgram, sandboxPath } from './providers';
 import { agentTables, createAgentService, createPlanningService, createRunQueue, createTaskService, planningTables } from './planning';
 import { createResourceMonitor } from './resources';
+import { createUsageService, usageTables } from './usage';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
@@ -154,7 +155,7 @@ async function startServices(): Promise<void> {
     return result.canceled ? undefined : result.filePaths[0];
   };
   const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
-  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, ...agentTables, activityTable]) transfer.register(table);
+  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, ...agentTables, ...usageTables, activityTable]) transfer.register(table);
   const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const ui: StorageUi = {
     confirm: async (options) => {
@@ -248,10 +249,22 @@ async function startServices(): Promise<void> {
   const timeoutMs = (): number => settingsStore.get('providers.timeoutSeconds') * 1000;
   const cli = { runner, env: () => process.env, timeoutMs, sandboxDir: () => sandboxDir, logger: logger.child('providers') };
   const localPrograms = join(process.env['LOCALAPPDATA'] ?? app.getPath('home'), 'Programs');
+  const usage = createUsageService({
+    db,
+    activity,
+    limits: () => ({
+      perDay: settingsStore.get('limits.cloudPerDay'),
+      perProjectPerDay: settingsStore.get('limits.cloudPerProjectPerDay'),
+      perTask: settingsStore.get('limits.cloudPerTask'),
+      maxAttempts: settingsStore.get('routing.maxAttempts'),
+    }),
+  });
+  usage.recover();
   const providers = createProviderService({
     db,
     projects,
     activity,
+    usage,
     logger: logger.child('providers'),
     redactor,
     confirm: (options) => ui.confirm(options),
@@ -301,7 +314,7 @@ async function startServices(): Promise<void> {
     projects,
     activity,
     logger: logger.child('queue'),
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId }),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => ({
@@ -314,6 +327,7 @@ async function startServices(): Promise<void> {
     localPolicy: async () => (await report(5000)).verdict,
     recheckMs: () => settingsStore.get('inference.monitorIntervalSeconds') * 1000,
     confirm: (options) => ui.confirm(options),
+    enforceLimits: (input) => providers.checkLaunch(input),
     writesEnabled: false,
   });
   queue.recover();
@@ -334,6 +348,7 @@ async function startServices(): Promise<void> {
     agents,
     providers,
     queue,
+    usage,
     resources: () => report(),
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),

@@ -14,6 +14,7 @@ import { createActivityLog, createRedactor } from '../logging';
 import { createProcessRunner, type ProcessRunner } from '../process';
 import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
+import { createUsageService } from '../usage';
 import { createAgentService } from './agents';
 import { createRunQueue, type ExecuteRequest, type RunQueue } from './queue';
 import { createTaskService } from './tasks';
@@ -51,12 +52,15 @@ async function env(options: Options = {}) {
     confirms.push(`${o.title}\n${o.message}\n${o.detail ?? ''}`);
     return Promise.resolve(answers.confirm);
   };
-  const providers = createProviderService({ db, adapters, projects, activity, logger, redactor, confirm, progress: () => undefined, ollamaEndpoint: () => 'http://127.0.0.1:11434', env: () => ({}), sandboxDir: () => 'C:\\Data\\provider-sandbox', now });
+  const limits = { perDay: 20, perProjectPerDay: 10, perTask: 5, maxAttempts: 3 };
+  const usage = createUsageService({ db, activity, limits: () => limits, now });
+  const providers = createProviderService({ db, adapters, projects, activity, usage, logger, redactor, confirm, progress: () => undefined, ollamaEndpoint: () => 'http://127.0.0.1:11434', env: () => ({}), sandboxDir: () => 'C:\\Data\\provider-sandbox', now });
   const routing = { profile: 'balanced' as RoutingProfile, overrides: {}, localModel: 'llama3.2:1b', maxAttempts: 3, apiKeySet: false };
   const policy = { verdict: allowed };
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger, now, confirm,
-    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId })),
+    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId })),
+    enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => routing,
@@ -70,7 +74,7 @@ async function env(options: Options = {}) {
   // The ids of the queued runs, in step order. shortcut: typed as five so tests can destructure; they only read what they queued.
   const runOf = (taskId: string, workflow: 'plan' | 'implement' | 'documentation' = 'plan', extra: { includeReviewer?: boolean } = {}) =>
     agents.createWorkflow({ taskId, workflow, includeReviewer: extra.includeReviewer ?? false, includeQa: false }).map((run) => run.id) as [string, string, string, string, string];
-  return { db, dir, activity, projects, project, tasks, agents, adapters, providers, queue, confirms, answers, routing, policy, newTask, runOf };
+  return { db, dir, activity, projects, project, tasks, agents, adapters, providers, queue, confirms, answers, routing, policy, newTask, runOf, usage, limits };
 }
 
 const until = async (check: () => boolean, ms = 4000): Promise<void> => {
@@ -354,6 +358,54 @@ describe('bounded retries and approval', () => {
     await e.queue.start(run);
     await until(() => e.agents.get(run).state === 'failed');
     expect(await failure(e.queue.retry(run))).toMatchObject({ code: 'LIMIT_REACHED', message: expect.stringContaining('1 time,') as unknown });
+  });
+});
+
+describe('launch limits (Step 14)', () => {
+  it('refuses to queue a cloud run when a limit is used up, says why, records it, and asks nothing', async () => {
+    const e = await env();
+    e.limits.perDay = 1;
+    const [first] = e.runOf(e.newTask('Add jumping').id, 'plan');
+    await e.queue.start(first);
+    await until(() => e.agents.get(first).state === 'completed');
+    const asked = e.confirms.length;
+    const [other] = e.runOf(e.newTask('Add dashing').id);
+    expect(await failure(e.queue.start(other))).toMatchObject({ code: 'LIMIT_REACHED', message: expect.stringContaining('daily limit') as unknown });
+    expect(e.confirms).toHaveLength(asked);
+    expect(e.agents.get(other)).toMatchObject({ state: 'queued', requestedAt: null });
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ status: 'blocked' });
+  });
+
+  it('logs a queued run with its task, run and the usage the provider returned', async () => {
+    const e = await env();
+    e.adapters['claude-code'].usage = { inputCount: 800, outputCount: 120, costUsdEstimate: null };
+    const task = e.newTask('Add jumping');
+    const [run] = e.runOf(task.id);
+    await e.queue.start(run);
+    await until(() => e.agents.get(run).state === 'completed');
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ runId: run, taskId: task.id, projectId: e.project.id, purpose: 'agent-run', status: 'completed', inputCount: 800, outputCount: 120, costUsdEstimate: null });
+  });
+
+  it('counts a try-again as another launch for the task, so the per-task limit also bounds retries', async () => {
+    const e = await env();
+    e.limits.perTask = 1;
+    e.adapters['claude-code'].failWith = new AppError('TOOL_FAILED', 'No.');
+    const [run] = e.runOf(e.newTask('Add jumping').id);
+    await e.queue.start(run);
+    await until(() => e.agents.get(run).state === 'failed');
+    expect(await failure(e.queue.retry(run))).toMatchObject({ code: 'LIMIT_REACHED', message: expect.stringContaining('This task') as unknown });
+    expect(e.agents.get(run).state).toBe('failed');
+  });
+
+  it('never limits a local run', async () => {
+    const e = await env();
+    e.limits.perDay = 1;
+    e.limits.perTask = 1;
+    const task = e.newTask('Docs');
+    const [run] = e.runOf(task.id, 'documentation');
+    await e.queue.start(run);
+    await until(() => e.agents.get(run).state === 'completed');
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ provider: 'ollama', location: 'local', status: 'completed' });
   });
 });
 

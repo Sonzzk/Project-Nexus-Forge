@@ -1,5 +1,6 @@
 import type { GenerateResult, OllamaModel, ProviderStatus, SuggestStepsResult } from '../../src/shared/providers';
 import type { ResourceReport } from '../../src/shared/resources';
+import type { UsageRow, UsageSummary, UsageWindow } from '../../src/shared/usage';
 import type { FakeApi } from './fake-api';
 
 // Canned answers for the provider channels, for component tests (the real rules are tested in src/main/providers).
@@ -34,7 +35,18 @@ export interface FakeProviders {
   pulled: string[];
   warmed: string[];
   resources: ResourceReport;
+  usageRows: UsageRow[];
+  usage: UsageSummary;
 }
+
+export const emptyWindow: UsageWindow = { launches: 0, cloudLaunches: 0, blocked: 0, reported: 0, unreported: 0, inputCount: null, outputCount: null, costUsdEstimate: null };
+export const emptyUsage: UsageSummary = {
+  today: emptyWindow,
+  last30Days: emptyWindow,
+  byProvider: [],
+  limits: { perDay: { limit: 20, used: 0 }, perProject: { limit: 10, used: 0 }, perTaskLimit: 5, maxAttempts: 3 },
+  dayStartsAt: '2026-10-24T00:00:00.000Z',
+};
 
 export function attachProviders(fake: FakeApi, seed: Partial<FakeProviders> = {}): FakeProviders {
   const state: FakeProviders = {
@@ -49,6 +61,8 @@ export function attachProviders(fake: FakeApi, seed: Partial<FakeProviders> = {}
       snapshot: { at: '2026-10-24T10:00:00.000Z', cpuPercent: 14, ramFreeMiB: 40_960, ramTotalMiB: 65_536, gpus: [{ name: 'NVIDIA GeForce RTX 3060', utilPercent: 20, vramUsedMiB: 3763, vramTotalMiB: 12288, vramFreeMiB: 8353 }], gpuNote: '', heavyApps: [], appsNote: '' },
       verdict: { allowed: true, blocks: [], warnings: [] },
     },
+    usageRows: [],
+    usage: emptyUsage,
     ...seed,
   };
   fake.handlers['providers:list'] = () => state.providers;
@@ -71,6 +85,8 @@ export function attachProviders(fake: FakeApi, seed: Partial<FakeProviders> = {}
     return { unloaded: true };
   };
   fake.handlers['resources:check'] = () => state.resources;
+  fake.handlers['usage:summary'] = () => state.usage;
+  fake.handlers['usage:list'] = () => state.usageRows;
   fake.handlers['providers:generate'] = () => state.generated;
   fake.handlers['providers:suggestSteps'] = () => state.suggestion;
   fake.handlers['providers:draftDocument'] = () => state.draft;

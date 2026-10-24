@@ -27,6 +27,7 @@ type Confirm = (options: { title: string; message: string; detail?: string; conf
 export interface ExecuteRequest {
   runId: string;
   projectId: string;
+  taskId: string | null;
   provider: ProviderId;
   model: string;
   prompt: string;
@@ -55,6 +56,8 @@ export interface RunQueueOptions {
   /** How long held runs wait before the queue looks again. */
   recheckMs: () => number;
   confirm: Confirm;
+  /** Throws LIMIT_REACHED when starting this run would pass a launch limit (Step 14); the same check runs again right before the send. */
+  enforceLimits: (input: { provider: ProviderId; projectId: string; taskId: string | null; runId: string }) => void;
   /** False until Step 15: no run may change project files yet. */
   writesEnabled: boolean;
   now?: () => Date;
@@ -163,6 +166,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
 
   async function request(run: AgentRun, route: Route): Promise<AgentRun> {
     const provider = usable(route);
+    options.enforceLimits({ provider, projectId: run.projectId, taskId: run.taskId, runId: run.id });
     const stamp = now().toISOString();
     db.run(
       'UPDATE agent_runs SET requested_at = ?, route_json = ?, provider_id = ?, model = ?, note = ?, updated_at = ? WHERE id = ?',
@@ -249,6 +253,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         const result = await options.execute({
           runId: run.id,
           projectId: run.projectId,
+          taskId: run.taskId,
           provider,
           model: route.model,
           prompt,

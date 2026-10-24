@@ -136,7 +136,7 @@ export function createClaudeCodeAdapter(options: CliOptions): ProviderAdapter {
 
 // ----------------------------------------------------------------------------------------------------------- Codex
 
-const CODEX_CAPABILITIES: Capabilities = { models: false, streaming: false, cancellation: true, contextLength: false, structuredOutput: true, usageReporting: false, readOnlyMode: true };
+const CODEX_CAPABILITIES: Capabilities = { models: false, streaming: false, cancellation: true, contextLength: false, structuredOutput: true, usageReporting: true, readOnlyMode: true };
 const CODEX_SIGN_IN = 'Open a terminal and run codex login. This app never reads your credentials.';
 
 export function createCodexAdapter(options: CliOptions): ProviderAdapter {
@@ -179,7 +179,10 @@ export function createCodexAdapter(options: CliOptions): ProviderAdapter {
       });
       if (messages.length === 0) throw new AppError('TOOL_FAILED', 'Codex finished without an answer this app could read.', { hint: 'Details are in the log.' });
       request.onText?.(messages.join('\n'));
-      return { text: messages.join('\n'), usage: null };
+      // Documented: each turn.completed event carries usage { input_tokens, output_tokens, ... } (learn.chatgpt.com/docs/non-interactive-mode, 2026-10-24). No cost is reported.
+      const used = events.flatMap((event) => (event['type'] === 'turn.completed' && isRecord(event['usage']) ? [event['usage']] : []));
+      const total = (key: string): number | null => (used.some((u) => num(u[key]) !== null) ? used.reduce((sum, u) => sum + (num(u[key]) ?? 0), 0) : null);
+      return { text: messages.join('\n'), usage: used.length === 0 ? null : { inputCount: total('input_tokens'), outputCount: total('output_tokens'), costUsdEstimate: null } };
     },
   };
 }

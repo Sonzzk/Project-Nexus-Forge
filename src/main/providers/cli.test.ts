@@ -148,13 +148,21 @@ describe('Codex CLI', () => {
   it('runs codex exec with JSON events in the read-only sandbox, prompt on stdin, skipping the repository check only for text-only requests', async () => {
     const { adapter, runner } = codex(() => ({ stdout: fixture('codex', 'exec-ok.jsonl') }));
     const result = await adapter.generate(request());
-    expect(result).toEqual({ text: 'Step one. Step two.', usage: null });
+    // Step 14: the documented turn.completed usage is read; Codex reports no cost, so none is invented.
+    expect(result).toEqual({ text: 'Step one. Step two.', usage: { inputCount: 10, outputCount: 5, costUsdEstimate: null } });
     expect(runner.started[0]?.args).toEqual(['exec', '--json', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '-']);
     expect(runner.started[0]?.stdin).toBe('Break this feature into steps');
     await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', model: 'gpt-test' }));
     expect(runner.started[1]?.args).toEqual(['exec', '--json', '--sandbox', 'read-only', '--ephemeral', '--model', 'gpt-test', '-']);
     expect(runner.started[1]?.cwd).toBe('D:\\Games\\Alpha');
     for (const spec of runner.started) expect(spec.args.join(' ')).not.toMatch(FORBIDDEN);
+  });
+
+  it('leaves usage empty when the turn reports none, and sums the turns that do', async () => {
+    const none = codex(() => ({ stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"Hi"}}\n{"type":"turn.completed"}\n' }));
+    expect(await none.adapter.generate(request())).toEqual({ text: 'Hi', usage: null });
+    const two = codex(() => ({ stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"Hi"}}\n{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":1}}\n{"type":"turn.completed","usage":{"input_tokens":4}}\n' }));
+    expect((await two.adapter.generate(request())).usage).toEqual({ inputCount: 7, outputCount: 1, costUsdEstimate: null });
   });
 
   it('reports a failed turn in its own words, with the sign-in step for a login problem', async () => {

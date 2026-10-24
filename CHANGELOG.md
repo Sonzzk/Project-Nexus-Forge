@@ -7,6 +7,15 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 14 · Usage tracking and limits (2026-10-24, tag `step-14`)
+
+### Added
+- A local usage log: every request the app sends (breakdowns, drafts, project sessions, connection tests, queued agent runs) is recorded with task, project, provider, model if known, times, status, and token counts or a cost estimate only when the provider returned them. Missing usage shows "Unavailable from this provider", never zero or a guess.
+- Launch limits for cloud work per day, per project per day and per task (the task limit also bounds retries, next to attempts per run), checked before you are asked to approve a send. A stopped launch says why, is logged, and appears in the activity list. Local models are never limited.
+- "Usage and limits" on the Integrations page (totals, per-provider reports, editable limits, recent requests) and a dashboard card.
+- Codex token counts are read from its documented `turn.completed` event.
+- Schema v9, two channels, three settings. Decision D-039, known issue KI-018.
+
 ## Step 13 · Agent orchestration and routing (2026-10-24, tag `step-13`)
 
 ### Added

@@ -41,6 +41,10 @@ export const SettingsSchema = z.object({
   'inference.keepAliveMinutes': z.number().int().min(0).max(120).default(5),
   /** How often held local runs look at the resources again. Nothing is measured while nothing waits. */
   'inference.monitorIntervalSeconds': z.number().int().min(5).max(600).default(30),
+  /** Launch limits (spec §12): cloud launches the app may start. 0 turns a limit off. The app cannot see a provider's own quota, so these are a safeguard. */
+  'limits.cloudPerDay': z.number().int().min(0).max(1000).default(20),
+  'limits.cloudPerProjectPerDay': z.number().int().min(0).max(1000).default(10),
+  'limits.cloudPerTask': z.number().int().min(0).max(1000).default(5),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
   'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
   /** Tasks (spec §10): ask for an approved plan before a task moves to In progress, and which view the Tasks page opens in. */

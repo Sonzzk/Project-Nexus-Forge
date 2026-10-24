@@ -69,6 +69,8 @@ export const CHANNELS = [
   'queue:retry',
   'queue:releaseLock',
   'resources:check',
+  'usage:summary',
+  'usage:list',
   'providers:list',
   'providers:check',
   'providers:models',

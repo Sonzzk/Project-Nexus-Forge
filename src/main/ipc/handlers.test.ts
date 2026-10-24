@@ -14,6 +14,7 @@ import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
+import { createUsageService } from '../usage';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -67,8 +68,9 @@ async function setup() {
   const agents = createAgentService({ db, projects, tasks, activity });
   mocks.ollama = createMockProvider('ollama', { modelList: [{ name: 'llama3.2:1b', sizeBytes: 1, modifiedAt: null, family: 'llama', parameterSize: '1B', quantization: null, contextLength: 4096, loaded: false }] });
   mocks.claude = createMockProvider('claude-code');
+  const usage = createUsageService({ db, activity, limits: () => ({ perDay: 20, perProjectPerDay: 10, perTask: 5, maxAttempts: 3 }) });
   const providers = createProviderService({
-    db, projects, activity, logger, redactor,
+    db, projects, activity, usage, logger, redactor,
     adapters: { ollama: mocks.ollama, 'claude-code': mocks.claude, codex: createMockProvider('codex') },
     confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
     progress: () => undefined,
@@ -78,7 +80,8 @@ async function setup() {
   });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId }),
+    enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => ({ profile: settings.get('routing.profile'), overrides: settings.get('routing.roleOverrides'), localModel: settings.get('routing.localModel'), maxAttempts: settings.get('routing.maxAttempts'), apiKeySet: false }),
@@ -114,6 +117,7 @@ async function setup() {
     agents,
     providers,
     queue,
+    usage,
     resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,
     reveal: (full) => void revealed.push(full),

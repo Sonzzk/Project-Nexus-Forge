@@ -3,6 +3,7 @@ import type { SerializedError } from '@shared/errors';
 import { STATUS_TEXT, type OllamaModel, type ProviderStatus, type PullProgress } from '@shared/providers';
 import { formatTime } from '../../lib/activity';
 import { useSettings } from '../../lib/settings';
+import { UsagePanel } from './UsagePanel';
 
 const CAPABILITY_LABELS: Record<keyof ProviderStatus['capabilities'], string> = {
   models: 'Lists models',
@@ -269,6 +270,7 @@ export function IntegrationsPage() {
             {p.id === 'ollama' && <OllamaPanel status={p} onChanged={() => setVersion((n) => n + 1)} />}
           </section>
         ))}
+        <UsagePanel />
       </div>
     </div>
   );

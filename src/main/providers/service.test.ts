@@ -10,6 +10,7 @@ import { copyFixture } from '../../../test/helpers/tree';
 import { createMockProvider, type MockProvider } from '../../../test/helpers/mock-provider';
 import { createActivityLog, createRedactor } from '../logging';
 import { createProjectRegistry } from '../projects';
+import { createUsageService } from '../usage';
 import { createProviderService } from './service';
 
 afterEach(removeTempDirs);
@@ -26,8 +27,11 @@ async function env(options: { envVars?: NodeJS.ProcessEnv; endpoint?: string; co
   const answers = { confirm: options.confirm ?? true };
   const progress: PullProgress[] = [];
   let tick = 0;
+  const now = () => new Date(Date.UTC(2026, 9, 24, 12, 0, tick++));
+  const limits = { perDay: 20, perProjectPerDay: 10, perTask: 5, maxAttempts: 3 };
+  const usage = createUsageService({ db, activity, limits: () => limits, now });
   const service = createProviderService({
-    db, adapters, projects, activity, logger, redactor,
+    db, adapters, projects, activity, usage, logger, redactor,
     confirm: (o) => {
       confirms.push({ title: o.title, message: o.message, detail: o.detail });
       return Promise.resolve(answers.confirm);
@@ -36,9 +40,9 @@ async function env(options: { envVars?: NodeJS.ProcessEnv; endpoint?: string; co
     ollamaEndpoint: () => options.endpoint ?? 'http://127.0.0.1:11434',
     env: () => options.envVars ?? {},
     sandboxDir: () => 'C:\\Data\\provider-sandbox',
-    now: () => new Date(Date.UTC(2026, 9, 24, 12, 0, tick++)),
+    now,
   });
-  return { db, project, projects, adapters, service, confirms, answers, progress, activity };
+  return { db, project, projects, adapters, service, confirms, answers, progress, activity, usage, limits };
 }
 
 const failure = async (promise: Promise<unknown>): Promise<AppErrorType> => {
@@ -204,6 +208,66 @@ describe('sending to a provider', () => {
   });
 });
 
+describe('the usage log and launch limits', () => {
+  it('logs a cloud request with the usage the provider returned, and a request that returned none with nothing', async () => {
+    const e = await env();
+    e.adapters['claude-code'].usage = { inputCount: 321, outputCount: 45, costUsdEstimate: 0.02 };
+    await e.service.generate(claude, 'Plan the dash move', 'task-breakdown');
+    e.adapters['claude-code'].usage = null;
+    await e.service.generate(claude, 'Plan again', 'task-breakdown');
+    const [silent, reported] = e.usage.list({ limit: 5 });
+    expect(reported).toMatchObject({ provider: 'claude-code', location: 'cloud', purpose: 'task-breakdown', status: 'completed', inputCount: 321, outputCount: 45, costUsdEstimate: 0.02 });
+    expect(silent).toMatchObject({ status: 'completed', inputCount: null, outputCount: null, costUsdEstimate: null });
+  });
+
+  it('logs a local model as local, a failure with its reason (redacted), and a stop as cancelled', async () => {
+    const e = await env();
+    e.adapters.ollama.usage = { inputCount: 9, outputCount: 3, costUsdEstimate: null };
+    await e.service.generate(local, 'hi', 'connection-test');
+    e.adapters['claude-code'].failWith = new AppError('TOOL_FAILED', 'Claude Code failed with key sk-ant-api03-notreal0123456789', { hint: 'x' });
+    await failure(e.service.generate(claude, 'x', 'document-draft'));
+    e.adapters['claude-code'].failWith = new AppError('CANCELLED', 'Claude Code was stopped.');
+    await failure(e.service.generate(claude, 'y', 'document-draft'));
+    const rows = e.usage.list({ limit: 5 });
+    expect(rows.map((r) => [r.provider, r.location, r.status])).toEqual([['claude-code', 'cloud', 'cancelled'], ['claude-code', 'cloud', 'failed'], ['ollama', 'local', 'completed']]);
+    expect(rows[1]?.reason).not.toContain('sk-ant-api03-notreal');
+    expect(rows[1]).toMatchObject({ inputCount: null, outputCount: null });
+  });
+
+  it('writes no row when the person declines, because nothing was sent', async () => {
+    const e = await env({ confirm: false });
+    await e.service.generate(claude, 'Plan', 'task-breakdown');
+    expect(e.usage.list({ limit: 5 })).toEqual([]);
+  });
+
+  it('attributes a project request to its project', async () => {
+    const e = await env();
+    await e.service.suggestSteps({ projectId: e.project.id, choice: claude, title: 'Crouch', description: '' }).catch(() => undefined);
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ projectId: e.project.id, purpose: 'task-breakdown' });
+  });
+
+  it('a limit stops a cloud request before the confirmation, so nothing is asked and nothing is sent; a local model is not limited', async () => {
+    const e = await env();
+    e.limits.perDay = 1;
+    await e.service.generate(claude, 'one', 'task-breakdown');
+    const asked = e.confirms.length;
+    const error = await failure(e.service.generate(claude, 'two', 'task-breakdown'));
+    expect(error).toMatchObject({ code: 'LIMIT_REACHED' });
+    expect(e.confirms).toHaveLength(asked);
+    expect(e.adapters['claude-code'].requests).toHaveLength(1);
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ status: 'blocked', provider: 'claude-code' });
+    expect((await e.service.generate(local, 'hi', 'connection-test')).sent).toBe(true);
+  });
+
+  it('an Ollama address that is not this PC counts as a cloud launch for the limits', async () => {
+    const e = await env({ endpoint: 'http://192.168.1.20:11434' });
+    e.limits.perDay = 1;
+    await e.service.generate(local, 'one', 'connection-test');
+    expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ provider: 'ollama', location: 'cloud' });
+    expect(await failure(e.service.generate(local, 'two', 'connection-test'))).toMatchObject({ code: 'LIMIT_REACHED' });
+  });
+});
+
 describe('models', () => {
   it('warm-up is a user action on a valid model name; a download asks first, says the size is not known, shows progress, and checks again', async () => {
     const e = await env();
@@ -274,7 +338,7 @@ describe('task breakdown and document drafting (the first uses of a provider)', 
 
 describe('a queued agent run', () => {
   const agentRun = (e: Awaited<ReturnType<typeof env>>, choice: { provider: ProviderId; model: string }, extra: { signal?: AbortSignal; onApproved?: () => void } = {}) =>
-    e.service.runAgent({ projectId: e.project.id, choice, prompt: 'You are the planner.', note: 'Routing (Balanced): because.\nCost: not free.', signal: extra.signal ?? new AbortController().signal, onApproved: extra.onApproved ?? (() => undefined), ownerId: 'run-1' });
+    e.service.runAgent({ projectId: e.project.id, choice, prompt: 'You are the planner.', note: 'Routing (Balanced): because.\nCost: not free.', signal: extra.signal ?? new AbortController().signal, onApproved: extra.onApproved ?? (() => undefined), ownerId: 'run-1', taskId: null });
 
   it('a coding agent runs read-only in the project folder, owned by the run, after a confirmation that carries the queue\'s note', async () => {
     const e = await env();
