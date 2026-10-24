@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 4)
+## Schema (version 5)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -31,6 +31,12 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `project_docs` | 4 | project (cascade), document type, content, time | Memory documents stored in the app. |
 | `context_packs` | 4 | project (cascade), title, task, budget, destination, hand-picked files, manifest (JSON), estimate | The manifest holds size, time and hash per item, not contents. |
 | `handoffs` | 4 | project (cascade), time, the seven handoff fields | |
+| `milestones` | 5 | project (cascade), title, status, scope tier, order, target date | Progress is computed, never stored. |
+| `tasks` | 5 | every field of spec §10, status, the status it was blocked from, plan approval time, milestone and parent (cleared when they are deleted) | Subtasks are one level deep. |
+| `task_dependencies` | 5 | task, depends on (both cascade) | Loops are refused when set and when imported. |
+| `task_notes` | 5 | task (cascade), time, text | |
+| `risks` | 5 | project (cascade), kind (bug or risk), title, severity, status, optional task | The bugs and risks register. |
+| `milestone_snapshots` | 5 | milestone (cascade), time, label, progress and counts by status | |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 
@@ -59,7 +65,7 @@ At start-up the database gets an integrity check. If it fails (`DB_CORRUPT`) or 
 
 Format `gdcc-export`, `formatVersion` 1: `{ format, formatVersion, appVersion, schemaVersion, exportedAt, tables: { <table id>: [ row, ... ] } }`. Rows are plain objects with one field per column.
 
-Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `activity_events`. Audits are left out because they can be run again.
+Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `milestones`, `tasks`, `task_dependencies`, `task_notes`, `risks`, `milestone_snapshots`, `activity_events`. Audits are left out because they can be run again.
 
 Import rules:
 

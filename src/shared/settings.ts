@@ -18,6 +18,9 @@ export const SettingsSchema = z.object({
   'audit.timeBudgetSeconds': z.number().int().min(1).max(120).default(8),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
   'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
+  /** Tasks (spec §10): ask for an approved plan before a task moves to In progress, and which view the Tasks page opens in. */
+  'tasks.requirePlanApproval': z.boolean().default(false),
+  'tasks.view': z.enum(['board', 'list', 'roadmap']).default('board'),
   /** Backups of the app database (spec §22). Project content is never backed up. */
   'backup.scheduleEnabled': z.boolean().default(false),
   'backup.intervalHours': z.number().int().min(1).max(720).default(24),

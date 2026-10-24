@@ -38,6 +38,8 @@ export interface PackServiceOptions {
   memory: MemoryService;
   activity: ActivityLog;
   limits: () => { maxFiles: number; budgetMs: number };
+  /** The open tasks of the project that mention any of the words, as Markdown (empty when none). The planning module provides it. */
+  relatedTasks?: (projectId: string, words: readonly string[]) => string;
   now?: () => Date;
   newId?: () => string;
 }
@@ -119,7 +121,12 @@ export function createPackService(options: PackServiceOptions): PackService {
       if (!fits) excluded.push({ path: doc.source, reason: 'over the token budget' });
     }
 
-    // 2. Files the user picked by hand come next; the same rules apply to them.
+    // 2. Related open tasks: what is already planned around this task.
+    const related = options.relatedTasks?.(request.projectId, keywordsOf(request.task)) ?? '';
+    if (related.trim() !== '')
+      add({ path: 'tasks', kind: 'tasks', reason: 'Open tasks that mention the same things', bytes: Buffer.byteLength(related, 'utf8'), mtimeMs: 0, sha256: sha256(related) }, `## Related tasks\n\n${related.trim()}\n`);
+
+    // 3. Files the user picked by hand come next; the same rules apply to them.
     const picked = new Set<string>();
     for (const raw of request.extraFiles) {
       const rel = raw.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -234,13 +241,15 @@ export function createPackService(options: PackServiceOptions): PackService {
   }
 
   /** Files whose size/time changed are compared by hash; a memory item is compared with the current document. */
-  function staleness(projectId: string, items: PackItem[]): ContextPack['stale'] {
+  function staleness(projectId: string, items: PackItem[], task: string): ContextPack['stale'] {
     const p = project(projectId);
     const reader: ProjectReader = createProjectReader(p.rootPath);
     const stale: ContextPack['stale'] = [];
     for (const item of items) {
       try {
-        if (item.kind === 'instructions') {
+        if (item.kind === 'tasks') {
+          if (sha256(options.relatedTasks?.(projectId, keywordsOf(task)) ?? '') !== item.sha256) stale.push({ path: item.path, change: 'changed' });
+        } else if (item.kind === 'instructions') {
           if (sha256(p.instructions) !== item.sha256) stale.push({ path: item.path, change: 'changed' });
         } else if (item.path.startsWith('app:')) {
           const doc = memory.text(projectId, item.path.slice(4) as DocType);
@@ -304,7 +313,7 @@ export function createPackService(options: PackServiceOptions): PackService {
           estimate: r.token_estimate,
           files: items.success ? items.data.length : 0,
           createdAt: r.created_at,
-          stale: items.success ? staleness(projectId, items.data).length : 0,
+          stale: items.success ? staleness(projectId, items.data, r.task).length : 0,
         };
       });
     },
@@ -312,7 +321,7 @@ export function createPackService(options: PackServiceOptions): PackService {
     async get(projectId, id) {
       const r = row(projectId, id);
       const stored = manifestSchema.parse(JSON.parse(r.manifest_json));
-      const stale = staleness(projectId, stored);
+      const stale = staleness(projectId, stored, r.task);
       const pack = await assemble(requestOf(r), r.id, true, r.created_at);
       return { ...pack, title: r.title, stale };
     },

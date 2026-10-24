@@ -665,3 +665,69 @@ h3 {
 .fact {
   display: contents;
 }
+
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(11rem, 1fr);
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.board__column {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  min-height: 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.board__column h3 {
+  margin: 0;
+}
+
+.taskcard {
+  text-align: left;
+  background: var(--bg-2, var(--bg-1));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  cursor: pointer;
+}
+
+.taskcard[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.taskcard__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+  font-size: 0.9em;
+}
+
+.split--tasks {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.progress progress {
+  vertical-align: middle;
+  width: 8rem;
+}
+
+.check {
+  display: block;
+}

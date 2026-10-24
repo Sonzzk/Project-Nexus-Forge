@@ -51,7 +51,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('dashboard', 'Dashboard', 'available', 5),
   nav('projects', 'Projects', 'available', 6),
   nav('workbench', 'AI Workbench', 'upcoming', 12),
-  nav('tasks', 'Tasks and Roadmap', 'upcoming', 10),
+  nav('tasks', 'Tasks and Roadmap', 'available', 10, 'Board, list and milestone roadmap; running agents on tasks arrives in Steps 11 to 13.'),
   nav('context', 'Project Context', 'available', 9, 'Project memory, context packs and session handoffs.'),
   nav('git', 'Git and Changes', 'available', 7, 'Read-only status and recent commits; diff review and revert arrive in Step 16.'),
   nav('testing', 'Testing', 'upcoming', 23),
@@ -111,7 +111,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     kind: 'action',
     label: 'Create a task',
     section: 'tasks',
-    state: 'upcoming',
+    state: 'available',
     step: 10,
   },
   {
@@ -133,12 +133,13 @@ export const FEATURES: readonly FeatureStatus[] = [
     step: 5,
   },
   { id: 'card.projects', kind: 'card', label: 'Projects', section: 'projects', state: 'available', step: 6 },
+  { id: 'card.portfolio', kind: 'card', label: 'Portfolio', section: 'tasks', state: 'available', step: 10 },
   {
     id: 'card.current-task',
     kind: 'card',
     label: 'Current task and milestone',
     section: 'tasks',
-    state: 'upcoming',
+    state: 'available',
     step: 10,
   },
   {
@@ -164,7 +165,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     kind: 'card',
     label: 'Next recommended action',
     section: 'tasks',
-    state: 'upcoming',
+    state: 'available',
     step: 10,
   },
 ];

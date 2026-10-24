@@ -89,7 +89,7 @@ export const MAX_DOC_BYTES = 256 * 1024;
 export const PackItemSchema = z.object({
   /** Project-relative path, or `app:<DOC_TYPE>` for a memory document stored in the app. */
   path: z.string().max(400),
-  kind: z.enum(['file', 'memory', 'instructions']),
+  kind: z.enum(['file', 'memory', 'instructions', 'tasks']),
   reason: z.string().max(200),
   bytes: z.number().int().nonnegative(),
   /** Estimated tokens for this item (characters divided by four). */

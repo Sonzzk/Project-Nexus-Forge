@@ -13,6 +13,7 @@ import { createIpc, type InvokeEventLike } from './handle';
 import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
+import { createPlanningService, createTaskService } from '../planning';
 import { createAuditService, createHandoffService, createMemoryService, createPackService } from '../scanning';
 import { createStorageService, createTransfer, loadMigrations, type StorageUi } from '../storage';
 import { createBackupService } from '../storage/backups';
@@ -57,6 +58,8 @@ async function setup() {
   const memory = createMemoryService({ db, projects, activity, confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)) });
   const packs = createPackService({ db, projects, memory, activity, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
+  const tasks = createTaskService({ db, projects, activity, requirePlanApproval: () => false });
+  const planning = createPlanningService({ db, projects, activity });
   const storage = createStorageService({
     db,
     userDataDir: dir,
@@ -78,6 +81,8 @@ async function setup() {
     memory,
     packs,
     handoffs,
+    tasks,
+    planning,
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -302,6 +307,64 @@ describe('memory, pack and handoff channels', () => {
     expect(await call('handoffs:latest', { projectId: id })).toMatchObject({ ok: true, value: { id: saved.value.id, nextTask: 'tune' } });
     expect(await call('handoffs:list', { projectId: id })).toMatchObject({ ok: true, value: [{ id: saved.value.id }] });
     expect(await call('handoffs:save', { projectId: id, fields: { ...fields, extra: 'x' } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+});
+
+describe('task, milestone and register channels', () => {
+  async function withProject() {
+    const env = await setup();
+    pickedFolder = copyFixture('audit-godot');
+    const added = (await env.call('projects:pickAndAdd')) as { ok: true; value: { project: { id: string } } };
+    return { ...env, id: added.value.project.id };
+  }
+  type Task = { id: string; status: string; allowedNext: string[] };
+
+  it('creates a task, moves it only along valid steps, and says why a bad move is refused', async () => {
+    const { call, id } = await withProject();
+    const created = (await call('tasks:create', { projectId: id, title: 'Add jumping', priority: 'high', acceptance: ['Jump is tunable'] })) as { ok: true; value: Task };
+    expect(created).toMatchObject({ ok: true, value: { status: 'inbox', allowedNext: ['planned', 'cancelled'] } });
+    expect(await call('tasks:setStatus', { id: created.value.id, status: 'done' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: 'A task cannot go from Inbox to Done.' } });
+    expect(await call('tasks:setStatus', { id: created.value.id, status: 'planned' })).toMatchObject({ ok: true, value: { status: 'planned' } });
+    expect(await call('tasks:list', { projectId: id })).toMatchObject({ ok: true, value: [{ title: 'Add jumping', acceptance: ['Jump is tunable'] }] });
+  });
+
+  it('refuses unknown fields, paths that leave the project, and statuses that do not exist', async () => {
+    const { call, id } = await withProject();
+    expect(await call('tasks:create', { projectId: id, title: 'x', cwd: 'C:\\' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('tasks:create', { projectId: id, title: 'x', files: ['..\\..\\secret.txt'] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('tasks:setStatus', { id: 'x', status: 'finished' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('tasks:list', { projectId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('rejects a dependency loop and recommends a ready task with its reasons', async () => {
+    const { call, id } = await withProject();
+    const make = async (title: string) => ((await call('tasks:create', { projectId: id, title })) as { ok: true; value: Task }).value;
+    const a = await make('A');
+    const b = await make('B');
+    await call('tasks:setDependencies', { id: b.id, dependsOn: [a.id] });
+    expect(await call('tasks:setDependencies', { id: a.id, dependsOn: [b.id] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    await call('tasks:setStatus', { id: a.id, status: 'planned' });
+    await call('tasks:setStatus', { id: a.id, status: 'ready' });
+    expect(await call('tasks:recommend', { projectId: id })).toMatchObject({ ok: true, value: { items: [{ task: { title: 'A' }, reasons: expect.arrayContaining(['unblocks 1 other task']) as unknown }] } });
+  });
+
+  it('milestones with progress from stored tasks, snapshots, the register and the portfolio', async () => {
+    const { call, id } = await withProject();
+    const m = (await call('milestones:create', { projectId: id, title: 'Prototype', scopeTier: 'prototype', status: 'active' })) as { ok: true; value: { id: string; progress: { percent: number | null } } };
+    expect(m.value.progress.percent).toBeNull();
+    await call('tasks:create', { projectId: id, title: 'T', milestoneId: m.value.id });
+    expect(await call('milestones:snapshot', { id: m.value.id, label: 'Start' })).toMatchObject({ ok: true, value: { label: 'Start', progress: { total: 1, done: 0, percent: 0 } } });
+    expect(await call('milestones:snapshots', { id: m.value.id })).toMatchObject({ ok: true, value: [{ label: 'Start' }] });
+    expect(await call('risks:create', { projectId: id, kind: 'bug', title: 'Crash', severity: 'high' })).toMatchObject({ ok: true, value: { status: 'open', severity: 'high' } });
+    expect(await call('tasks:portfolio')).toMatchObject({ ok: true, value: [{ currentMilestone: 'Prototype', openBugs: 1, progress: { total: 1 } }] });
+    expect(await call('milestones:remove', { id: m.value.id })).toEqual({ ok: true, value: { removed: true } });
+  });
+
+  it('breaks a feature down into a parent and chained steps', async () => {
+    const { call, id } = await withProject();
+    const made = (await call('tasks:breakdown', { projectId: id, title: 'Crouch', description: '', milestoneId: null, chain: true, steps: [{ title: 'Input', acceptance: ['C works'] }, { title: 'Camera', acceptance: [] }] })) as { ok: true; value: { title: string; dependsOn: string[]; id: string }[] };
+    expect(made.value.map((t) => t.title)).toEqual(['Crouch', 'Input', 'Camera']);
+    expect(made.value[2]?.dependsOn).toEqual([made.value[1]?.id]);
   });
 });
 

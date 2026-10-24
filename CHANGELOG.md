@@ -7,6 +7,13 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 10 · Task management (2026-10-24, tag `step-10`)
+
+### Added
+- Tasks and Roadmap: tasks with every field of spec §10 and a real lifecycle (Inbox, Planned, Ready, In progress, Review, Testing, Done, plus Blocked, Cancelled, Failed) where only valid moves are offered; dependencies that cannot loop; milestones with scope tiers; a board, a list and a milestone roadmap over the same stored tasks; notes; an optional plan-approval gate; nine task templates; a manual breakdown of a feature into chained steps; an explained next-task recommendation; and a bugs and risks register.
+- Progress counted only from stored tasks (no tasks, no percentage), milestone snapshots, and a portfolio across projects. Dashboard cards: Current task and milestone, Next recommended action, Portfolio.
+- Schema v5, 22 channels, settings `tasks.requirePlanApproval` and `tasks.view`, export of all planning tables (with a whole-graph loop check on import). Decision D-035, known issue KI-014.
+
 ## Step 9 · Context and session handoffs (2026-10-24, tag `step-09`)
 
 ### Added

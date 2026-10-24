@@ -32,6 +32,8 @@ describe('settings schema', () => {
       'backup.intervalHours': 24,
       'backup.keepCount': 10,
       'context.defaultBudget': 8000,
+      'tasks.requirePlanApproval': false,
+      'tasks.view': 'board',
     });
   });
 

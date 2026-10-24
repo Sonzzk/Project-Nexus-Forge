@@ -4,7 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEATURES, isUsable } from '@shared/feature-status';
 import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
+import { allowedNext } from '@shared/tasks';
 import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
+import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -591,5 +593,177 @@ describe('project context', () => {
     const card = await screen.findByRole('region', { name: 'Latest session handoff' });
     expect(await within(card).findByText('Tune the jump')).toBeTruthy();
     expect(within(card).getByText('Add jumping')).toBeTruthy();
+  });
+});
+
+describe('tasks and roadmap', () => {
+  let planning: FakePlanning;
+  const openTasks = async (seed: Parameters<typeof attachPlanning>[1] = {}, projects = true) => {
+    const user = await setup(projects ? { projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } } : {});
+    planning = attachPlanning(fake, seed);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Tasks and Roadmap/ }));
+    await screen.findByRole('heading', { name: 'Tasks and Roadmap' });
+    return user;
+  };
+  const column = (name: string) => within(screen.getByRole('region', { name }));
+
+  it('asks for a project first', async () => {
+    await openTasks({}, false);
+    expect(await screen.findByText('Select a project to plan its tasks.')).toBeTruthy();
+  });
+
+  it('starts empty with a clear next step, and creates a task from a template with its fields prefilled and editable', async () => {
+    const user = await openTasks();
+    expect(await screen.findByText(/No tasks yet\. Add one/)).toBeTruthy();
+    expect(screen.getByText(/There are no tasks yet/)).toBeTruthy(); // the recommendation says why it has nothing to offer
+    await user.click(screen.getByRole('button', { name: 'New task…' }));
+    const form = await screen.findByRole('region', { name: 'New task' });
+    await user.selectOptions(within(form).getByLabelText('Start from a template'), 'bug-fixing');
+    expect((within(form).getByLabelText<HTMLSelectElement>('Suggested agent role')).value).toBe('qa');
+    await user.type(within(form).getByLabelText('Title'), 'Fix the crash on load');
+    expect(within(form).getByLabelText<HTMLTextAreaElement>(/Acceptance criteria/).value).toContain('The bug no longer reproduces');
+    await user.click(within(form).getByRole('button', { name: 'Add to the Inbox' }));
+    const sent = fake.calls.find((c) => c.channel === 'tasks:create')?.input as Record<string, unknown>;
+    expect(sent).toMatchObject({ projectId: 'project-1', title: 'Fix the crash on load', category: 'bug-fixing', role: 'qa', status: 'inbox' });
+    expect(sent['acceptance']).toEqual(expect.arrayContaining(['The bug no longer reproduces with the recorded steps']));
+    expect(await column('Inbox').findByText('Fix the crash on load')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Task Fix the crash on load' })).toBeTruthy(); // the new task opens for editing
+  });
+
+  it('moves a task along its lifecycle with only the valid next steps offered, and shows the board columns change', async () => {
+    const user = await openTasks({ tasks: [sampleTask(1, { title: 'Add jumping' })] });
+    await user.click(await column('Inbox').findByRole('button', { name: /Add jumping/ }));
+    const detail = await screen.findByRole('region', { name: 'Task Add jumping' });
+    const moves = within(within(detail).getByRole('group', { name: 'Move this task' })).getAllByRole('button').map((b) => b.textContent);
+    expect(moves).toEqual(['Move to Planned', 'Move to Cancelled']);
+    await user.click(within(detail).getByRole('button', { name: 'Move to Planned' }));
+    expect(await column('Planned').findByText('Add jumping')).toBeTruthy();
+    expect(column('Inbox').queryByText('Add jumping')).toBeNull();
+    await user.click(within(screen.getByRole('region', { name: 'Task Add jumping' })).getByRole('button', { name: 'Move to Ready' }));
+    expect(await column('Ready').findByText('Add jumping')).toBeTruthy();
+  });
+
+  it('shows what a task waits on, refuses to start it early with the reason, and lets dependencies be set from the detail panel', async () => {
+    const first = sampleTask(1, { title: 'Build the level', status: 'in-progress', allowedNext: allowedNext('in-progress', null) });
+    const second = sampleTask(2, { title: 'Light the level', status: 'ready', allowedNext: allowedNext('ready', null) });
+    const user = await openTasks({ tasks: [first, second] });
+    await user.click(await column('Ready').findByRole('button', { name: /Light the level/ }));
+    let detail = await screen.findByRole('region', { name: 'Task Light the level' });
+    await user.click(within(within(detail).getByRole('list', { name: 'Dependencies' })).getByLabelText(/Build the level/));
+    expect(fake.calls.find((c) => c.channel === 'tasks:setDependencies')?.input).toEqual({ id: 'task-2', dependsOn: ['task-1'] });
+    detail = await screen.findByRole('region', { name: 'Task Light the level' });
+    expect(await within(detail).findByText(/Waiting on: Build the level \(In progress\)/)).toBeTruthy();
+    expect(await column('Ready').findByText('Waiting on 1')).toBeTruthy();
+    await user.click(within(detail).getByRole('button', { name: 'Move to In progress' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('waiting on: "Build the level"');
+    expect(column('Ready').getByText('Light the level')).toBeTruthy(); // nothing moved
+  });
+
+  it('approves and withdraws a plan, saves edited fields, and keeps notes', async () => {
+    const user = await openTasks({ tasks: [sampleTask(1, { title: 'Dash', status: 'ready', allowedNext: allowedNext('ready', null) })] });
+    await user.click(await column('Ready').findByRole('button', { name: /Dash/ }));
+    const detail = await screen.findByRole('region', { name: 'Task Dash' });
+    expect(within(detail).getByText('Plan not approved yet.')).toBeTruthy();
+    await user.click(within(detail).getByRole('button', { name: 'Approve the plan' }));
+    expect(await within(await screen.findByRole('region', { name: 'Task Dash' })).findByRole('button', { name: 'Withdraw approval' })).toBeTruthy();
+
+    const again = screen.getByRole('region', { name: 'Task Dash' });
+    await user.type(within(again).getByLabelText(/Acceptance criteria/), 'It covers two meters');
+    await user.click(within(again).getByRole('button', { name: 'Save changes' }));
+    expect(fake.calls.find((c) => c.channel === 'tasks:update')?.input).toMatchObject({ id: 'task-1', acceptance: ['It covers two meters'] });
+    expect(await within(screen.getByRole('region', { name: 'Task Dash' })).findByText('Saved.')).toBeTruthy();
+
+    await user.type(within(again).getByLabelText('New note'), 'Ask about the cooldown');
+    await user.click(within(again).getByRole('button', { name: 'Add note' }));
+    expect(await within(again).findByText('Ask about the cooldown')).toBeTruthy();
+  });
+
+  it('breaks a feature down from plain text into a parent and steps with acceptance criteria', async () => {
+    const user = await openTasks();
+    await user.click(screen.getByRole('button', { name: 'Break a feature down…' }));
+    const form = await screen.findByRole('region', { name: 'Break a feature down' });
+    const create = within(form).getByRole('button', { name: /^Create/ });
+    expect((create as HTMLButtonElement).disabled).toBe(true);
+    await user.type(within(form).getByLabelText('Feature'), 'Crouching');
+    await user.type(within(form).getByLabelText(/^Steps/), 'Add the crouch input :: C toggles crouch | works on a controller{Enter}Lower the camera');
+    await user.click(within(form).getByRole('button', { name: 'Create 3 tasks' }));
+    const sent = fake.calls.find((c) => c.channel === 'tasks:breakdown')?.input as { steps: { title: string; acceptance: string[] }[]; chain: boolean };
+    expect(sent.steps).toEqual([{ title: 'Add the crouch input', acceptance: ['C toggles crouch', 'works on a controller'] }, { title: 'Lower the camera', acceptance: [] }]);
+    expect(sent.chain).toBe(true);
+    expect(await column('Planned').findByText('Crouching')).toBeTruthy();
+    expect(column('Planned').getByText('Lower the camera')).toBeTruthy();
+  });
+
+  it('lists tasks with a filter and a search', async () => {
+    const user = await openTasks({ tasks: [sampleTask(1, { title: 'Open one' }), sampleTask(2, { title: 'Finished one', status: 'done', allowedNext: allowedNext('done', null) })] });
+    await user.click(screen.getByRole('tab', { name: 'List' }));
+    const table = await screen.findByRole('table', { name: 'Task list' });
+    expect(within(table).getByText('Open one')).toBeTruthy();
+    expect(within(table).queryByText('Finished one')).toBeNull(); // open tasks by default
+    await user.selectOptions(screen.getByLabelText('Show'), 'all');
+    expect(within(screen.getByRole('table', { name: 'Task list' })).getByText('Finished one')).toBeTruthy();
+    await user.type(screen.getByLabelText('Search'), 'fini');
+    expect(within(screen.getByRole('table', { name: 'Task list' })).queryByText('Open one')).toBeNull();
+    expect(savedSettings()).toContainEqual({ key: 'tasks.view', value: 'list' });
+  });
+
+  it('roadmap: adds a milestone with its scope, shows progress from stored tasks only, changes its status and takes snapshots', async () => {
+    const user = await openTasks();
+    await user.click(screen.getByRole('tab', { name: 'Roadmap' }));
+    expect(await screen.findByText(/No milestones yet/)).toBeTruthy();
+    await user.type(screen.getByLabelText('Title'), 'First playable');
+    await user.selectOptions(screen.getByLabelText('Scope'), 'prototype');
+    await user.click(screen.getByRole('button', { name: 'Add milestone' }));
+    const card = await screen.findByRole('region', { name: 'Milestone First playable' });
+    expect(within(card).getByText('First playable prototype')).toBeTruthy();
+    expect(within(card).getByText('No tasks yet')).toBeTruthy(); // no invented percentage
+
+    await user.selectOptions(within(card).getByLabelText('Status of First playable'), 'active');
+    expect(fake.calls.find((c) => c.channel === 'milestones:update')?.input).toEqual({ id: expect.any(String) as unknown, status: 'active' });
+    await user.click(within(card).getByRole('button', { name: 'Take a snapshot' }));
+    expect(await within(await screen.findByRole('region', { name: 'Milestone First playable' })).findByRole('list', { name: 'Snapshots of First playable' })).toBeTruthy();
+  });
+
+  it('bugs and risks: records one, changes its status, and deletes it', async () => {
+    const user = await openTasks();
+    await user.click(screen.getByRole('tab', { name: 'Bugs and risks' }));
+    expect(await screen.findByText(/Nothing recorded/)).toBeTruthy();
+    const form = screen.getByRole('region', { name: 'New bug or risk' });
+    await user.selectOptions(within(form).getByLabelText('Severity'), 'high');
+    await user.type(within(form).getByLabelText('Title'), 'Crash when loading level 2');
+    await user.click(within(form).getByRole('button', { name: 'Record it' }));
+    expect(fake.calls.find((c) => c.channel === 'risks:create')?.input).toMatchObject({ kind: 'bug', severity: 'high', title: 'Crash when loading level 2', taskId: null });
+    const list = await screen.findByRole('list', { name: 'Bugs and risks' });
+    await user.selectOptions(within(list).getByLabelText('Status of Crash when loading level 2'), 'closed');
+    expect(fake.calls.find((c) => c.channel === 'risks:update')?.input).toMatchObject({ status: 'closed' });
+    await user.click(within(screen.getByRole('list', { name: 'Bugs and risks' })).getByRole('button', { name: 'Delete Crash when loading level 2' }));
+    await vi.waitFor(() => expect(planning.risks).toEqual([]));
+  });
+
+  it('shows the recommended task with the reasons for it', async () => {
+    const task = sampleTask(1, { title: 'Fix the crash', priority: 'high', status: 'ready', allowedNext: allowedNext('ready', null) });
+    await openTasks({ tasks: [task], recommendation: { items: [{ task, score: 40, reasons: ['high priority', 'fixes a bug'] }], message: '' } });
+    const region = await screen.findByRole('region', { name: 'Next recommended task' });
+    expect(within(region).getByText('Fix the crash')).toBeTruthy();
+    expect(within(region).getByText('Why: high priority; fixes a bug.')).toBeTruthy();
+  });
+
+  it('the dashboard shows the current milestone, active and blocked tasks, the recommendation and the portfolio', async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' }), sampleProject(2, { name: 'Beta', status: 'paused' })], settings: { 'projects.selectedId': 'project-1' } });
+    const task = sampleTask(1, { title: 'Fix the crash', status: 'in-progress', allowedNext: allowedNext('in-progress', null) });
+    attachPlanning(fake, {
+      tasks: [task, sampleTask(2, { title: 'Stuck thing', status: 'blocked', allowedNext: allowedNext('blocked', 'ready') })],
+      recommendation: { items: [{ task, score: 20, reasons: ['Already in progress: finish it before starting something new'] }], message: '' },
+    });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const current = await screen.findByRole('region', { name: 'Current task and milestone' });
+    expect(await within(current).findByText('Fix the crash (In progress)')).toBeTruthy();
+    expect(within(current).getByText('Stuck thing')).toBeTruthy();
+    expect(within(await screen.findByRole('region', { name: 'Next recommended action' })).getByText(/Already in progress/)).toBeTruthy();
+    const portfolio = await screen.findByRole('region', { name: 'Portfolio' });
+    expect(await within(portfolio).findByText('Alpha')).toBeTruthy();
+    expect(within(portfolio).getByText('Beta')).toBeTruthy();
+    expect(within(portfolio).getByText(/paused/)).toBeTruthy();
   });
 });

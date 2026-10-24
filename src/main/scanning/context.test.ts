@@ -39,9 +39,10 @@ async function env(fixture: string, answer = true) {
   const git = createGitService({ runner: { start: () => { throw new Error('no process'); } } as never, logger, locate: () => undefined });
   const audits = createAuditService({ db, projects, git, activity, logger, redactor, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
   const limits = () => ({ maxFiles: 20_000, budgetMs: 8000 });
-  const packs = createPackService({ db, projects, memory, activity, limits });
+  const related = { text: '' };
+  const packs = createPackService({ db, projects, memory, activity, limits, relatedTasks: () => related.text });
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
-  return { db, root, project, projects, memory, packs, handoffs, audits, confirms, answers, activity };
+  return { db, root, project, projects, memory, packs, handoffs, audits, confirms, answers, activity, related };
 }
 
 const codeOf = async (p: Promise<unknown> | (() => unknown)): Promise<string | undefined> => {
@@ -270,6 +271,22 @@ describe('context packs', () => {
     expect(tight.estimate).toBeLessThanOrEqual(150);
     expect(tight.items.length).toBeLessThan(roomy.items.length);
     expect(tight.excluded.some((x) => x.reason === 'over the token budget')).toBe(true);
+  });
+
+  it('includes open tasks that mention the same things, and goes stale when they change', async () => {
+    const e = await env('audit-godot');
+    e.related.text = '- Tune the player speed (ready): speed is configurable';
+    const pack = await e.packs.build(request(e, 'player speed'));
+    expect(pack.items.find((i) => i.kind === 'tasks')).toMatchObject({ path: 'tasks', reason: 'Open tasks that mention the same things' });
+    expect(pack.text).toContain('## Related tasks');
+    expect(pack.text).toContain('Tune the player speed');
+    const saved = e.packs.save(e.project.id, 'With tasks');
+    expect((await e.packs.get(e.project.id, saved.id)).stale).toEqual([]);
+    e.related.text = '- Tune the player speed (done)';
+    expect((await e.packs.get(e.project.id, saved.id)).stale).toEqual([{ path: 'tasks', change: 'changed' }]);
+    e.related.text = '';
+    const without = await e.packs.build(request(e, 'player speed'));
+    expect(without.items.some((i) => i.kind === 'tasks')).toBe(false);
   });
 
   it('says when nothing matched instead of padding the pack', async () => {

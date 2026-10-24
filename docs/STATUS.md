@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 9 · Context and session handoffs: done (2026-10-24, tag `step-09`)
-**Next step:** Step 10 · Task management (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-10--task-management).
+**Current step:** Step 10 · Task management: done (2026-10-24, tag `step-10`)
+**Next step:** Step 11 · Agent roles and workflows (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-11--agent-roles-and-workflows).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -14,6 +14,7 @@
 - **Step 7.** Read-only project audit (13 sections, every finding Confirmed with evidence or Inferred), bounded scanner, ProjectReader and path policy, read-only Git service, the audit panel, the Git and Changes page and the dashboard Recent changes card (ARCHITECTURE.md section 20, D-032). Verified by all six gates and a snapshot test showing no project file changes.
 - **Step 8.** Backups (manual, scheduled, retention), restore that saves the current data first and swaps at the next start, a recovery dialog for a damaged or newer database, versioned JSON export and import with preview, conflict choice and native confirmations, a table-registration hook, `docs/DATA.md` and `docs/RECOVERY.md` (ARCHITECTURE.md section 21, D-033). Verified by all six gates and an end-to-end restore through a real restart.
 - **Step 9.** Project memory (app database by default; project folder or a documentation folder inside it only after a diff preview and a native confirmation), context packs with reasons, exclusions, a full preview and staleness, session handoffs and the dashboard card (ARCHITECTURE.md section 22, D-034). Verified by all six gates; the project-folder write was tested on fixtures only.
+- **Step 10.** Tasks and Roadmap: lifecycle, dependencies, milestones with scope tiers, board, list and roadmap views, templates, manual breakdown, explained recommendation, bugs and risks register, snapshots, portfolio and dashboard cards (ARCHITECTURE.md section 23, D-035). Verified by all six gates.
 
 ## In progress
 - Nothing.
@@ -23,10 +24,10 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 10: tasks with a real lifecycle, board, list and milestone views, dependencies without cycles, an explainable next-task recommendation, milestones and honest progress; tasks join export and feed context packs.
+- Step 11: agent roles (read-only except the implementer), run records with orchestration states and valid transitions, workflow templates that show the expected action and provider before anything runs, and no process spawned.
 
 ## Application feature status
-The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
+The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -44,6 +45,15 @@ The app has a working shell, a project registry with detection and overrides, re
 | GPU | NVIDIA GeForce RTX 3060, 12288 MiB, driver 610.74 (`nvidia-smi` available) |
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
+
+## Handoff: Step 10
+- **Requested:** a game-development task manager with a real lifecycle, board, list and roadmap views, milestones, notes, honest progress, an explained next-task recommendation, a manual feature breakdown, task templates and the generic parts of the Backrooms mode (subsystems, scope tiers, a bugs and risks register); tasks join export.
+- **Changed:** `src/main/planning/` (`tasks.ts`, `milestones.ts`, `export.ts`, `parse.ts`), `src/shared/tasks.ts`, migration `0005_tasks.sql`, 22 channels (`tasks:*`, `milestones:*`, `risks:*`), `ExportableTable.verify` in the storage transfer, settings `tasks.requirePlanApproval` and `tasks.view`, the Tasks and Roadmap page (`features/tasks/`), three dashboard cards, manifest states (Tasks and Roadmap, the Create a task action, Current task, Next action and a new Portfolio card now available), `test/mocks/fake-planning.ts`, `test/e2e/tasks.e2e.ts`; ARCHITECTURE.md section 23, D-035, KI-014, DATA.md schema v5, CHANGELOG and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (580 of 580), `build`, `check:docs` and `test:e2e` (28 of 28, including a task taken through every lifecycle step with progress counted from the stored task, a chained breakdown whose second step refuses to start early, and the register and recommendation surviving a restart).
+- **Unfinished:** nothing in Step 10. Drag and drop, a calendar timeline, release checklists (Step 23) and the Backrooms profile (Step 18) are not built (KI-014).
+- **Known risks:** the recommendation is simple arithmetic and may not match intuition on every project; its reasons are always shown. Suggested role and provider are text until Steps 11 and 12.
+- **Relevant files:** `src/shared/tasks.ts`, `src/main/planning/tasks.ts`, `src/main/planning/milestones.ts`, `src/renderer/src/features/tasks/TasksPage.tsx`.
+- **Next task:** Step 11 · Agent roles and workflows.
 
 ## Handoff: Step 9
 - **Requested:** persistent project memory with a minimal compatible proposal and a preview before any write into a project, task-specific context packs with a preview and staleness, and session handoffs with the seven fields, shown on the dashboard.

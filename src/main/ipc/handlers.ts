@@ -5,6 +5,7 @@ import type { GitService } from '../git';
 import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
+import type { PlanningService, TaskService } from '../planning';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
 import { resolveInside } from '../security';
@@ -22,6 +23,8 @@ export interface HandlerServices {
   memory: MemoryService;
   packs: PackService;
   handoffs: HandoffService;
+  tasks: TaskService;
+  planning: PlanningService;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -106,6 +109,38 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('handoffs:save', ({ projectId, fields }) => services.handoffs.save(projectId, fields));
   ipc.handle('handoffs:list', ({ projectId }) => services.handoffs.list(projectId));
   ipc.handle('handoffs:latest', ({ projectId }) => services.handoffs.latest(projectId));
+
+  ipc.handle('tasks:list', ({ projectId }) => services.tasks.list(projectId));
+  ipc.handle('tasks:create', (input) => services.tasks.create(input));
+  ipc.handle('tasks:update', (patch) => services.tasks.update(patch));
+  ipc.handle('tasks:remove', ({ id }) => {
+    services.tasks.remove(id);
+    return { removed: true };
+  });
+  ipc.handle('tasks:setStatus', ({ id, status }) => services.tasks.setStatus(id, status));
+  ipc.handle('tasks:approvePlan', ({ id, approved }) => services.tasks.approvePlan(id, approved));
+  ipc.handle('tasks:setDependencies', ({ id, dependsOn }) => services.tasks.setDependencies(id, dependsOn));
+  ipc.handle('tasks:notes', ({ id }) => services.tasks.notes(id));
+  ipc.handle('tasks:addNote', ({ id, text }) => services.tasks.addNote(id, text));
+  ipc.handle('tasks:breakdown', (input) => services.tasks.breakdown(input));
+  ipc.handle('tasks:recommend', ({ projectId }) => services.tasks.recommend(projectId));
+  ipc.handle('tasks:portfolio', () => services.planning.portfolio());
+  ipc.handle('milestones:list', ({ projectId }) => services.planning.milestones(projectId));
+  ipc.handle('milestones:create', (input) => services.planning.createMilestone(input));
+  ipc.handle('milestones:update', (patch) => services.planning.updateMilestone(patch));
+  ipc.handle('milestones:remove', ({ id }) => {
+    services.planning.removeMilestone(id);
+    return { removed: true };
+  });
+  ipc.handle('milestones:snapshot', ({ id, label }) => services.planning.snapshot(id, label));
+  ipc.handle('milestones:snapshots', ({ id }) => services.planning.snapshots(id));
+  ipc.handle('risks:list', ({ projectId }) => services.planning.risks(projectId));
+  ipc.handle('risks:create', (input) => services.planning.createRisk(input));
+  ipc.handle('risks:update', (patch) => services.planning.updateRisk(patch));
+  ipc.handle('risks:remove', ({ id }) => {
+    services.planning.removeRisk(id);
+    return { removed: true };
+  });
 
   ipc.handle('storage:status', () => services.storage.status());
   ipc.handle('storage:backupNow', () => services.storage.backupNow());

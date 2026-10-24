@@ -24,6 +24,8 @@ export interface FakeApi {
   git: GitSummary;
   /** Project-relative paths the page asked to reveal. */
   revealed: string[];
+  /** Extra channels answered by a helper (see fake-planning.ts); a handler returns the value of an ok result. */
+  handlers: Record<string, (input: unknown) => unknown>;
   /** Project context: canned answers for the memory, pack and handoff channels. */
   memoryOverview: MemoryOverview;
   memoryContent: Record<string, string>;
@@ -58,6 +60,7 @@ export function createFakeApi(
     git: { available: true, isRepository: false, message: 'Not a Git repository.' },
     revealed: [],
     backups: [],
+    handlers: {},
     memoryOverview: sampleMemoryOverview(),
     memoryContent: {},
     memoryPreview: { type: 'DECISIONS', location: 'App database', isNew: true, unchanged: false, createsFolder: false, diff: [{ kind: 'add', text: '# Decisions' }], bytes: 12, previousBytes: 0 },
@@ -74,6 +77,15 @@ export function createFakeApi(
 
   const invoke = ((channel: string, input: unknown): Promise<IpcResult<unknown>> => {
     fake.calls.push({ channel, input });
+    const handler = fake.handlers[channel];
+    if (handler !== undefined) {
+      try {
+        return Promise.resolve({ ok: true, value: handler(input) });
+      } catch (error) {
+        const e = error as { code?: string; message?: string; hint?: string };
+        return Promise.resolve({ ok: false, error: { code: (e.code ?? 'INTERNAL') as 'INTERNAL', message: e.message ?? 'Failed.', ...(e.hint === undefined ? {} : { hint: e.hint }), retryable: false } });
+      }
+    }
     if (channel === 'settings:get') return Promise.resolve({ ok: true, value: fake.settings });
     if (channel === 'settings:set') {
       const { key, value } = input as { key: string; value: unknown };

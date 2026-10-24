@@ -29,6 +29,8 @@ export interface ExportableTable {
   check?(row: Row): string | undefined;
   /** For a row that would be added: text the user must confirm first (a project's folder), or undefined if none is needed. */
   needsConfirmation?(row: Row): string | undefined;
+  /** Runs inside the import transaction after all rows are written; a message rolls the whole import back (for rules that span rows, such as no loops). */
+  verify?(db: Db): string | undefined;
   orderBy?: string;
 }
 
@@ -263,8 +265,8 @@ export function createTransfer(options: TransferOptions): Transfer {
 
     apply(parsed, mode) {
       const inFile = new Map<string, Set<string>>(); // parents imported earlier in this transaction are already in the database
-      return db.transaction(() =>
-        parsed.tables.map(({ table, rows }) => {
+      return db.transaction(() => {
+        const results = parsed.tables.map(({ table, rows }) => {
           const result = { id: table.id, label: table.label, added: 0, replaced: 0, skipped: 0 };
           for (const row of rows) {
             // Parents come first (registration order), so by now an imported parent row is already in the database.
@@ -278,8 +280,13 @@ export function createTransfer(options: TransferOptions): Transfer {
             } else if (kind !== 'same') result.skipped++;
           }
           return result;
-        }),
-      );
+        });
+        for (const { table } of parsed.tables) {
+          const problem = table.verify?.(db);
+          if (problem !== undefined) throw invalid(`The import was not applied: ${problem}.`, 'Nothing was changed.');
+        }
+        return results;
+      });
     },
   };
 }

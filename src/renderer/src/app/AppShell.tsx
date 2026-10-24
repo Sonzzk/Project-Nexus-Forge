@@ -6,6 +6,7 @@ import { ContextPage } from '../features/context/ContextPage';
 import { GitPage } from '../features/git/GitPage';
 import { Dashboard } from '../features/dashboard/Dashboard';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
+import { TasksPage } from '../features/tasks/TasksPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { StatusPage } from '../features/status/StatusPage';
 import { UpcomingPage } from '../features/UpcomingPage';
@@ -23,6 +24,7 @@ const PAGES: Partial<Record<NavSection, ComponentType>> = {
   projects: ProjectsPage,
   git: GitPage,
   context: ContextPage,
+  tasks: TasksPage,
   activity: ActivityPage,
   settings: SettingsPage,
   status: StatusPage,

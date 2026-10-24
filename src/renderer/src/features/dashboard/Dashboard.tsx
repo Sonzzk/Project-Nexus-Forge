@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Handoff } from '@shared/context';
+import { STATUS_LABELS } from '@shared/tasks';
 import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
 import { useNav } from '../../app/navigation';
@@ -155,6 +156,134 @@ function HandoffCard() {
   );
 }
 
+function useJson<T>(key: string | undefined, load: (key: string) => Promise<{ ok: true; value: T } | { ok: false }>): T | undefined {
+  const [value, setValue] = useState<{ key: string; value: T } | undefined>();
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
+  useEffect(() => {
+    if (key === undefined) return;
+    let cancelled = false;
+    void loadRef.current(key).then((result) => {
+      if (!cancelled && result.ok) setValue({ key, value: result.value });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  return value?.key === key ? value?.value : undefined;
+}
+
+function CurrentTaskCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const projectId = selected?.id;
+  const tasks = useJson(projectId, (id) => window.api.invoke('tasks:list', { projectId: id }));
+  const milestones = useJson(projectId, (id) => window.api.invoke('milestones:list', { projectId: id }));
+  const risks = useJson(projectId, (id) => window.api.invoke('risks:list', { projectId: id }));
+  const current = milestones?.find((m) => m.status === 'active') ?? milestones?.find((m) => m.status === 'planned');
+  const active = tasks?.filter((t) => t.children === 0 && ['in-progress', 'review', 'testing'].includes(t.status)) ?? [];
+  const blocked = tasks?.filter((t) => t.status === 'blocked') ?? [];
+  const open = (kind: string): number => risks?.filter((r) => r.kind === kind && r.status === 'open').length ?? 0;
+  return (
+    <section className="card" aria-label="Current task and milestone" data-feature="card.current-task">
+      <div className="card__head">
+        <h2>Current task and milestone</h2>
+        <button type="button" className="btn" onClick={() => go('tasks')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its milestone and tasks.</p>}
+      {selected !== undefined && tasks !== undefined && (
+        <dl className="facts">
+          <dt>Milestone</dt>
+          <dd>
+            {current === undefined
+              ? 'None yet'
+              : `${current.title} · ${current.progress.percent === null ? 'no tasks yet' : `${current.progress.done} of ${current.progress.total} done (${current.progress.percent}%)`}`}
+          </dd>
+          <dt>Active</dt>
+          <dd>{active.length === 0 ? 'Nothing in progress' : active.map((t) => `${t.title} (${STATUS_LABELS[t.status]})`).join(', ')}</dd>
+          <dt>Blocked</dt>
+          <dd>{blocked.length === 0 ? 'None' : blocked.map((t) => t.title).join(', ')}</dd>
+          <dt>Open</dt>
+          <dd>
+            {open('bug')} bugs · {open('risk')} risks
+          </dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function NextActionCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const projectId = selected?.id;
+  const next = useJson(projectId, (id) => window.api.invoke('tasks:recommend', { projectId: id }));
+  const top = next?.items[0];
+  return (
+    <section className="card" aria-label="Next recommended action" data-feature="card.next-action">
+      <div className="card__head">
+        <h2>Next recommended action</h2>
+        <button type="button" className="btn" onClick={() => go('tasks')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to get a recommendation.</p>}
+      {selected !== undefined && next !== undefined && top === undefined && <p className="empty">{next.message}</p>}
+      {top !== undefined && (
+        <>
+          <p>
+            <strong>{top.task.title}</strong>
+          </p>
+          <p className="muted">Why: {top.reasons.join('; ')}.</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function PortfolioCard() {
+  const { select } = useProjects();
+  const { go } = useNav();
+  const entries = useJson('all', () => window.api.invoke('tasks:portfolio', {}));
+  return (
+    <section className="card" aria-label="Portfolio" data-feature="card.portfolio">
+      <div className="card__head">
+        <h2>Portfolio</h2>
+      </div>
+      {entries !== undefined && entries.length === 0 && <p className="empty">No projects registered yet.</p>}
+      <ul className="rows" aria-label="Projects at a glance">
+        {entries?.map((entry) => (
+          <li key={entry.projectId}>
+            <button
+              type="button"
+              className="row row--card"
+              onClick={() => {
+                select(entry.projectId);
+                go('tasks');
+              }}
+            >
+              <span className="dot" data-severity={entry.projectStatus === 'active' ? 'info' : 'warning'} />
+              <span className="row__summary">
+                <strong>{entry.name}</strong>{' '}
+                <span className="muted">
+                  · {entry.projectStatus !== 'active' ? `${entry.projectStatus} · ` : ''}
+                  {entry.progress.percent === null ? 'no tasks yet' : `${entry.progress.done} of ${entry.progress.total} done (${entry.progress.percent}%)`}
+                  {entry.currentMilestone === null ? '' : ` · ${entry.currentMilestone}`}
+                  {entry.openBugs + entry.openRisks > 0 ? ` · ${entry.openBugs} bugs, ${entry.openRisks} risks` : ''}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function Dashboard() {
   const { events, loading, error } = useActivity(8);
   const { selected, select } = useNav();
@@ -185,6 +314,9 @@ export function Dashboard() {
         <ProjectsCard />
         <GitCard />
         <HandoffCard />
+        <CurrentTaskCard />
+        <NextActionCard />
+        <PortfolioCard />
         {CARDS.filter((feature) => feature.state !== 'available').map((feature) => (
           <UpcomingCard key={feature.id} feature={feature} />
         ))}

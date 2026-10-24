@@ -15,6 +15,7 @@ import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
+import { createPlanningService, createTaskService, planningTables } from './planning';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
 import {
@@ -148,7 +149,7 @@ async function startServices(): Promise<void> {
     return result.canceled ? undefined : result.filePaths[0];
   };
   const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
-  for (const table of [settingsTable, ...projectTables, ...contextTables, activityTable]) transfer.register(table);
+  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, activityTable]) transfer.register(table);
   const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const ui: StorageUi = {
     confirm: async (options) => {
@@ -214,17 +215,26 @@ async function startServices(): Promise<void> {
     }),
   });
   const memory = createMemoryService({ db, projects, activity, confirm: (options) => ui.confirm(options) });
+  const tasks = createTaskService({ db, projects, activity, requirePlanApproval: () => settingsStore.get('tasks.requirePlanApproval') });
   const packs = createPackService({
     db,
     projects,
     memory,
     activity,
+    relatedTasks: (projectId, words) =>
+      tasks
+        .list(projectId)
+        .filter((t) => t.status !== 'done' && t.status !== 'cancelled' && words.some((w) => `${t.title} ${t.description}`.toLowerCase().includes(w)))
+        .slice(0, 8)
+        .map((t) => `- ${t.title} (${t.status})${t.acceptance.length > 0 ? `: ${t.acceptance.join('; ')}` : ''}`)
+        .join('\n'),
     limits: () => ({
       maxFiles: settingsStore.get('audit.maxFiles'),
       budgetMs: settingsStore.get('audit.timeBudgetSeconds') * 1000,
     }),
   });
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
+  const planning = createPlanningService({ db, projects, activity });
   registerHandlers(ipc, {
     logger,
     settings: settingsStore,
@@ -235,6 +245,8 @@ async function startServices(): Promise<void> {
     memory,
     packs,
     handoffs,
+    tasks,
+    planning,
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,

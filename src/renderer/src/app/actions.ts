@@ -18,6 +18,7 @@ export function createActionHandlers(context: ActionContext): Record<string, () 
     'action.toggle-inspector': context.toggleInspector,
     'action.toggle-density': context.toggleDensity,
     'action.add-project': context.addProject,
+    'action.new-task': () => context.go('tasks'),
   };
   // Every sidebar item navigates, including upcoming ones, whose page says which step builds them.
   for (const feature of FEATURES)

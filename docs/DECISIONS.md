@@ -198,3 +198,15 @@ Applied migrations are recorded in a `schema_migrations` table with checksums. B
 - **A pack is a request plus a manifest.** Contents are rebuilt from the files, so a saved pack never stores copies of project text in the database. The manifest holds the size, modification time and SHA-256 of each included item.
 - **Hand-picked files follow the same rules.** The sensitive-name list, the binary and size limits, and the scanner's skipped folders apply no matter how a file got on the list; a path that leaves the project rejects the whole request.
 - **The handoff draft is deliberately small.** Only Git and audit facts are prefilled; "what was requested" and "what was verified" are claims only the person can make.
+
+## D-035 · Step 10 task planning choices (Step 10, Accepted)
+
+- **The lifecycle is a table, not scattered ifs.** `TRANSITIONS` in `src/shared/tasks.ts` is the only place that says which moves exist; the service, the UI buttons and the fake used in component tests all read it. Review to Done is allowed only when the task has no test requirements, so tested work goes through Testing.
+- **Progress counts leaf tasks.** A parent made by a breakdown is a container for its steps and is not counted, or a feature would count twice. Cancelled tasks are not counted. With nothing to count the percentage is `null`; the UI says "No tasks yet" rather than showing 0% or 100%.
+- **Plan approval is a flag with an optional gate.** `plan_approved_at` records when the person approved the plan. The setting `tasks.requirePlanApproval` (off by default, because no agent runs exist yet) makes Ready to In progress require it. Step 11 makes the implementer role require it.
+- **Recommendations are explained arithmetic.** Priority (10 to 40), +15 for the current milestone, +10 for a bug-fix task, +10 for a linked open high-severity bug, +3 for each task it unblocks; ties go to the older task. Work already in progress is always recommended first. Only Ready tasks without unmet dependencies are offered. There is no model involved and no task is ever invented.
+- **No drag and drop.** The board changes a task's status through buttons that offer only valid moves, so the rules are enforced and the control is keyboard- and screen-reader-friendly. Drag and drop can be added over the same service call.
+- **Subtasks are one level deep.** Deeper trees invite over-planning (spec §10: "do not continuously invent extra tasks"). The export orders top-level tasks first so a subtask's parent is imported before it.
+- **Imported dependencies are checked as a whole.** A per-row check cannot see a loop, so `ExportableTable.verify` runs after the rows are written, inside the transaction.
+- **The Backrooms profile is not here.** Subsystem, scope tiers and the register are generic (spec §19 "generic parts"); the Backrooms domains and risk presets arrive with Step 18.
+- **Release checklists are Step 23.** This step has milestone snapshots only.
