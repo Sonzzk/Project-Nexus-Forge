@@ -35,7 +35,7 @@ No application code exists yet. Every feature in the spec is **not started**; th
 ## Handoff: Step 1
 - **Requested:** read the whole spec, build a dependency map and roadmap over the user's 29 steps, save the spec as the source of truth, create CLAUDE.md and progress notes, implement and test only the first roadmap task, push to GitHub.
 - **Changed:** added `CLAUDE.md`, `CHANGELOG.md`, `docs/MASTER_SPEC.md`, `docs/MASTER_SPEC.sha256`, `docs/ROADMAP.md`, `docs/REQUIREMENTS.md`, `docs/STATUS.md`, `docs/DECISIONS.md`, `docs/KNOWN_ISSUES.md`, `scripts/check-docs.mjs`, `scripts/check-docs.test.mjs`; added a documents section to `README.md`.
-- **Verified:** both docs checks pass; README's original text and LICENSE are unchanged; a fresh clone from GitHub passes the check.
+- **Verified:** both docs checks pass on the local copy and on a fresh clone from GitHub (which Git checks out with CRLF line endings); README's original text and LICENSE are unchanged. The fresh-clone run found two tests that broke on CRLF files; they were fixed in a follow-up commit after the `step-01` tag, so start Step 2 from the latest `main`.
 - **Unfinished:** nothing in Step 1. ARCHITECTURE.md, folder structure and dependency versions belong to Step 2.
 - **Known risks:** Node.js runtime (KI-001); the user's step order differs from the spec's phase order (D-006); Step 29 runs after the final audit (D-008).
 - **Relevant files:** `docs/ROADMAP.md` (Step 2 block), `docs/DECISIONS.md` (D-003 stack), `docs/KNOWN_ISSUES.md` (KI-001).

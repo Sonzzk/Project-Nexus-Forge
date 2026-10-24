@@ -15,7 +15,8 @@ function errorsAfter(file, edit) {
   try {
     cpSync(join(repo, 'docs'), join(root, 'docs'), { recursive: true });
     const path = join(root, 'docs', file);
-    const before = readFileSync(path, 'utf8');
+    // Same normalization as the check: Windows checkouts use CRLF, and `.` does not match `\r`.
+    const before = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
     const after = edit(before);
     assert.notEqual(after, before, 'the edit must change the file');
     writeFileSync(path, after);

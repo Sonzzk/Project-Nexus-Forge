@@ -14,3 +14,6 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 
 ### Changed
 - `README.md`: added links to the project documents; the original text is kept.
+
+### Fixed (after the `step-01` tag)
+- `scripts/check-docs.test.mjs`: two tests failed on Windows checkouts with CRLF line endings; the test helper now normalizes line endings like the check does.

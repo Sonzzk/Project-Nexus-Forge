@@ -1,6 +1,6 @@
 # Roadmap: GameDev Command Center
 
-The app is built in the 29 steps from the user's table in [MASTER_SPEC.md](MASTER_SPEC.md) (the source of truth). Each step runs in its own project thread, in order, on top of the previous step's tagged commit (`step-NN`). A step is finished only when its acceptance criteria are tested and its notes are updated (see [CLAUDE.md](../CLAUDE.md)).
+The app is built in the 29 steps from the user's table in [MASTER_SPEC.md](MASTER_SPEC.md) (the source of truth). Each step runs in its own project thread, in order, on top of the latest `main`; every finished step is tagged `step-NN` as a rollback point. A step is finished only when its acceptance criteria are tested and its notes are updated (see [CLAUDE.md](../CLAUDE.md)).
 
 Step numbers are the user's build steps, not spec section numbers. "§N" below means a spec section. [REQUIREMENTS.md](REQUIREMENTS.md) maps every spec section and acceptance criterion to the steps that own it.
 
