@@ -58,15 +58,15 @@ describe('registerHandlers', () => {
     const { call } = await setup();
     expect(await call('settings:get')).toEqual({
       ok: true,
-      value: { 'logging.level': 'info', 'ui.density': 'comfortable' },
+      value: expect.objectContaining({ 'ui.density': 'comfortable' }) as unknown,
     });
     expect(await call('settings:set', { key: 'ui.density', value: 'compact' })).toEqual({
       ok: true,
-      value: { 'logging.level': 'info', 'ui.density': 'compact' },
+      value: expect.objectContaining({ 'ui.density': 'compact' }) as unknown,
     });
     expect(await call('settings:get')).toEqual({
       ok: true,
-      value: { 'logging.level': 'info', 'ui.density': 'compact' },
+      value: expect.objectContaining({ 'ui.density': 'compact' }) as unknown,
     });
   });
 

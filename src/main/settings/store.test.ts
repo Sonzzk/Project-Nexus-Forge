@@ -19,7 +19,13 @@ async function setup() {
 
 describe('settings schema', () => {
   it('has a default for every key', () => {
-    expect(SettingsSchema.parse({})).toEqual({ 'logging.level': 'info', 'ui.density': 'comfortable' });
+    expect(SettingsSchema.parse({})).toEqual({
+      'logging.level': 'info',
+      'ui.density': 'comfortable',
+      'ui.sidebarCollapsed': false,
+      'ui.inspectorOpen': false,
+      'ui.layout': {},
+    });
   });
 
   it('has no secret fields: credentials never live in ordinary settings', () => {
@@ -31,7 +37,7 @@ describe('settings schema', () => {
 describe('createSettingsStore', () => {
   it('returns defaults on a fresh database', async () => {
     const { db, open } = await setup();
-    expect(open().all()).toEqual({ 'logging.level': 'info', 'ui.density': 'comfortable' });
+    expect(open().all()).toEqual(SettingsSchema.parse({}));
     db.close();
   });
 
@@ -77,7 +83,7 @@ describe('createSettingsStore', () => {
     );
     db.run("INSERT INTO settings (key, value_json, updated_at) VALUES ('from.the.future', '1', 'x')");
     const store = open();
-    expect(store.all()).toEqual({ 'logging.level': 'info', 'ui.density': 'comfortable' });
+    expect(store.all()).toEqual(SettingsSchema.parse({}));
     expect(logger.entries.filter((e) => e.lvl === 'warn').map((e) => e.data?.['key'])).toEqual([
       'ui.density',
       'logging.level',

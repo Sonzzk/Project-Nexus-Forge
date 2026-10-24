@@ -25,6 +25,7 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
-    "test/helpers/**/*"
+    "test/helpers/**/*",
+    "test/docs/**/*"
   ]
 }

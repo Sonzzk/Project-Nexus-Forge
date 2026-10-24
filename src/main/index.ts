@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { AppError } from '@shared/errors';
 import type { AppInfo } from '@shared/ipc/contract';
 import { installCrashHandlers } from './app/crash';
@@ -154,6 +154,8 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(async () => {
     try {
+      // The default File/Edit/View/Window menu is for development; a packaged app has its own UI (KI-009).
+      if (app.isPackaged) Menu.setApplicationMenu(null);
       installSecurityGuards();
       serveRenderer(rendererRootFor(__dirname));
       await startServices();

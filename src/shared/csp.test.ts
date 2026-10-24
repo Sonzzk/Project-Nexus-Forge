@@ -6,7 +6,8 @@ describe('buildCsp', () => {
     const csp = buildCsp({ dev: false, meta: false });
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self';");
-    expect(csp).toContain("style-src 'self';");
+    // Styles: our own files and the one fixed Radix scroll-lock style, by hash; never 'unsafe-inline'.
+    expect(csp).toMatch(/style-src 'self' ('sha256-[A-Za-z0-9+/=]+' ?)+;/);
     expect(csp).toContain("connect-src 'self';");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain('unsafe');

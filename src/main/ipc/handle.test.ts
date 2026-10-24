@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SettingsSchema } from '@shared/settings';
 import { AppError, INTERNAL_ERROR_MESSAGE, type IpcResult } from '@shared/errors';
 import { memoryLogger } from '../../../test/helpers/logger';
 import { createIpc, type InvokeEventLike, type IpcMainLike } from './handle';
@@ -68,7 +69,7 @@ describe('createIpc', () => {
 
   it('rejects a missing request where an object is required', async () => {
     const { ipc, call } = setup();
-    ipc.handle('settings:set', () => ({ 'logging.level': 'info', 'ui.density': 'comfortable' }));
+    ipc.handle('settings:set', () => SettingsSchema.parse({}));
     expect(errorOf(await call('settings:set', [])).code).toBe('INVALID_INPUT');
     expect(errorOf(await call('settings:set', [{ key: 'not.a.setting', value: 1 }])).code).toBe(
       'INVALID_INPUT',

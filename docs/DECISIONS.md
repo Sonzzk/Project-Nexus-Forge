@@ -148,3 +148,11 @@ Applied migrations are recorded in a `schema_migrations` table with checksums. B
 - **`.cmd` shims** run as `%ComSpec% /d /s /c ""<file>" <args>"` only for drive-letter paths without `"%^&|<>!` and arguments from `[A-Za-z0-9_\-./:=@+,\\]`; cmd.exe still splits an argument at `=`, so shims should not rely on it. Everything else is refused with a hint to use stdin.
 - **Import rules in lint.** Module `index.ts` files for `logging`, `settings` and `security` were added so cross-module imports have somewhere to go; the rules are listed in ARCHITECTURE.md section 4. The global `fetch` is banned in `src/main` until `providers/ollama/` exists; `net.fetch` in the `app://` handler is a different API.
 - **Dependencies.** Zod 4.6.7 (the pinned Step 4 row) is the only package added, under `devDependencies` like the rest (D-028).
+
+## D-030 · Step 5 shell choices (Step 5, Accepted)
+
+- **Navigation is a typed state; upcoming sections are reachable.** A sidebar item for an unbuilt section opens a page that says which step builds it and offers no control, so no button is dead and nothing pretends. An unbuilt palette action is disabled and labeled instead.
+- **Panel sizes are percentages.** In react-resizable-panels 4 a bare number is pixels; the code uses strings such as \"28%\", and saves the layout only after a user drag or key press (isUserInteraction).
+- **Radix scroll-lock style by hash.** See ARCHITECTURE.md section 18. The alternative was style-src 'unsafe-inline', which would also allow every other inline style.
+- **Packaged builds drop the default menu** (Menu.setApplicationMenu(null)); development keeps it for developer tools. Not exercised until Step 27 packages the app (KI-009).
+- **Packages:** radix-ui, cmdk, react-resizable-panels, lucide-react, jsdom, @testing-library/react, @testing-library/dom and @testing-library/user-event at the Step 5 rows of ARCHITECTURE.md section 1.

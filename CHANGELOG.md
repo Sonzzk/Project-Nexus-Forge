@@ -7,6 +7,19 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 5 · Dashboard and UI (2026-10-24, tag `step-05`)
+
+### Added
+- The application shell: dark design tokens with comfortable and compact density, a collapsible sidebar with the 11 sections of spec §5 plus Implementation Status, a top bar with an empty project switcher, a command palette (Ctrl+K), an inspector (Ctrl+J) with resizable panels, keyboard navigation and visible focus.
+- The feature-status manifest and the Implementation Status page listing all 29 steps; unbuilt sections and cards say `Upcoming · Step N`.
+- Real pages: Dashboard (recent activity, live), Activity and Logs, Settings (density, log level).
+- Settings `ui.sidebarCollapsed`, `ui.inspectorOpen`, `ui.layout`; 20 new unit and component tests and 3 end-to-end tests; the fake `window.api` for component tests.
+- Decision D-030.
+
+### Changed
+- The CSP allows Radix's one fixed scroll-lock style by hash.
+- A packaged app has no default menu.
+
 ## Step 4 · Core application structure (2026-10-24, tag `step-04`)
 
 ### Added

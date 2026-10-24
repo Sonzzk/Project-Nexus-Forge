@@ -1,0 +1,47 @@
+/* Design tokens: dark neutral surfaces, one restrained accent, status colors used only for meaning.
+   Density changes row height and spacing only (spec §5, ui.density). */
+:root {
+  color-scheme: dark;
+
+  --bg-0: #0d0f12;
+  --bg-1: #13161b;
+  --bg-2: #1a1e25;
+  --bg-3: #232832;
+  --line: #2a303b;
+  --line-strong: #3a4250;
+
+  --text: #e6e8ec;
+  --text-dim: #a3a9b5;
+  --text-faint: #7b8290;
+
+  --accent: #6ea8fe;
+  --accent-bg: #1c2a40;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+
+  --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Mono', Consolas, monospace;
+
+  --radius: 6px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --text-size: 13px;
+  --row-h: 32px;
+  --sidebar-w: 224px;
+  --sidebar-w-collapsed: 52px;
+  --topbar-h: 44px;
+}
+
+[data-density='compact'] {
+  --text-size: 12px;
+  --row-h: 26px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --topbar-h: 38px;
+}

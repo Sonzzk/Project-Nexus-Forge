@@ -9,7 +9,7 @@ export async function launchApp(userData: string): Promise<{ app: ElectronApplic
   });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  // The first paint asks main for app info; wait until the window shows the database line.
-  await page.getByText('Database').waitFor();
+  // The shell appears once the settings have loaded through IPC.
+  await page.getByRole('navigation', { name: 'Main' }).waitFor();
   return { app, page };
 }

@@ -33,7 +33,7 @@ The installed Claude Code is 2.1.197 (Step 1 check). The current headless docs d
 
 ## KI-009 · The window shows Electron's default menu bar (found in Step 3, open)
 
-The Step 3 window has Electron's default menu (File, Edit, View, Window). In a development run it also offers developer tools; packaged builds have developer tools off (`devTools: !app.isPackaged`). Step 5 builds the real shell and decides what the menu contains (or removes it).
+The Step 3 window has Electron's default menu (File, Edit, View, Window). In a development run it also offers developer tools; packaged builds have developer tools off (`devTools: !app.isPackaged`). Step 5 kept the menu for development and removes it in a packaged build (`Menu.setApplicationMenu(null)`); that branch is untested until Step 27 packages the app.
 
 ## KI-010 · A damaged or newer database ends in an error box, not a recovery screen (found in Step 4, open until Step 8)
 
