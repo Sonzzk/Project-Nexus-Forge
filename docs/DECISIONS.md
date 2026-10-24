@@ -12,7 +12,7 @@ For this repository we follow §30: progress documents in `docs/`, `CHANGELOG.md
 The request says "sections 1–29", but the spec has 30 sections, and the user's table has 29 *build steps* whose titles do not match the spec's section numbers (for example step 12 "Provider integrations" covers spec §9 and step 17 "Activity logs and monitoring" covers spec §15).
 Section 30 is treated as binding permanent rules and condensed into CLAUDE.md. The roadmap follows the user's 29 steps; REQUIREMENTS.md maps all 30 sections onto them so nothing is skipped.
 
-## D-003 · Application stack (Step 1, Proposed; Step 2 confirms versions and libraries)
+## D-003 · Application stack (Step 1, Accepted in Step 2; versions and libraries in D-011 to D-026)
 
 Selected: the spec's preferred stack, an Electron desktop shell with React and TypeScript built by Vite, SQLite for structured data, Zod for validating external input, persistent logs and automated tests. Electron's main process does trusted OS work; the renderer stays sandboxed behind a typed preload bridge.
 Why: it is Windows-first, runs Node in the main process for spawning and supervising CLIs (Claude Code, Codex, Git, engines), shares TypeScript and Vite with the user's web games, and has the largest ecosystem for AI coding agents to work in.
@@ -52,3 +52,74 @@ Each step commits to `main` after every stable sub-task, then adds an annotated 
 ## D-010 · A dependency-free docs check as Step 1's test (Step 1, Accepted)
 
 Step 1 produces documents, so its automated test is `scripts/check-docs.mjs` (Node standard library only). It verifies the spec hash, that the roadmap has 29 well-formed steps whose titles and models match the user's table, that effort levels match the table notes, that no step depends on a later step, and that every spec section and acceptance criterion has an owning step. `scripts/check-docs.test.mjs` proves the check catches tampering, forward dependencies, model mismatches and untraced sections. Step 3 wires it into `npm run check:docs`.
+
+## D-011 · Electron 45 and exact version pins (Step 2, Accepted)
+
+Electron 45.0.0 (stable 2026-10-20, Chromium 156, Node 24.22.0) is the newest stable major and has the longest support window (to 2027-04-27, tentative); Electron supports only the latest three majors. Every package is pinned to an exact version in `package.json`, listed with license, source and verification date in ARCHITECTURE.md section 1, and the docs check fails when the two disagree. Alternative: Electron 44.9.3, more mature but out of support on 2027-03-02, before the planned release steps. Sources: https://releases.electronjs.org/schedule and releases.json, checked 2026-10-24.
+
+## D-012 · Node.js 24 LTS for development (Step 2, Proposed: install awaiting the user's approval)
+
+The PC has Node.js 20.18.1, end of life since 2026-04-30 and below Vite's minimum (KI-001). Recommended: **Node.js 24.22.1 LTS**, the same major as Electron 45's Node, supported to 2028-04-30, inside every tool's engine range (Vitest needs ^22.12, ^24 or >=26; jsdom needs ^24.15; `node:sqlite` is a release candidate from 24.15.0). Install with `winget install OpenJS.NodeJS.LTS --version 24.22.1`, which runs the official `node-v24.22.1-x64.msi` from nodejs.org (winget's SHA-256 `3bda4baf…1b01` matches nodejs.org's SHASUMS256.txt). It replaces Node 20 machine-wide in `C:\Program Files\nodejs`.
+Alternatives: Node 22 (maintenance, end of life 2027-04-30, too short for this build); Node 26 (LTS from 2026-10-28, a different major from Electron's Node, and newer than some tools have been tested on); a version manager such as fnm, nvm-windows or Volta (lets other projects keep Node 20, but adds another machine-wide tool, and Node 20 gets no security fixes anyway). Sources: https://github.com/nodejs/Release schedule.json and https://nodejs.org/dist/index.json, checked 2026-10-24.
+
+## D-013 · electron-vite for development and builds (Step 2, Accepted)
+
+electron-vite 6.0.0 with Vite 8.3.5 builds main, preload and renderer from electron-vite's documented `src/main`, `src/preload`, `src/renderer` layout with little configuration. Alternative: Electron Forge 8.0.1 with its Vite plugin, which Forge's docs still mark experimental ("As of Electron Forge v7.5.0 ... marked as experimental"). Sources: https://electron-vite.org/guide/ and https://www.electronforge.io/config/plugins/vite, checked 2026-10-24.
+
+## D-014 · Hand-written scaffold, not the create-electron template (Step 2, Accepted)
+
+Step 3 writes the small scaffold by hand. The `@quick-start/create-electron` template brings `@electron-toolkit/preload`, whose `electronAPI` exposes a generic `ipcRenderer` to the renderer, and offers `electron-updater`; both conflict with the IPC rules and spec §24 (no automatic updater). Removing them afterwards is more work than writing the dozen files.
+
+## D-015 · `node:sqlite` instead of better-sqlite3 (Step 2, Accepted)
+
+The database uses Node's built-in `node:sqlite` (`DatabaseSync`, prepared statements, `backup()`), stability 1.2 "release candidate" since Node 24.15.0, no flag. It works inside Electron since electron/electron#47706 (merged 2025-07-15, backported to 36, 37 and 38), and Electron 45 bundles Node 24.22.0. Because development Node and Electron's Node are the same major, the same code runs in Vitest and in the app with no native-module rebuilds.
+Alternative: better-sqlite3 13.0.3, mature and fast, but a native module that must be rebuilt for Electron's ABI and separately for system Node; it stays the fallback behind the `Db` wrapper. Risks: KI-006. Sources: https://nodejs.org/docs/latest-v24.x/api/sqlite.html and the Electron PR, checked 2026-10-24.
+
+## D-016 · TypeScript 6.0, not 7 (Step 2, Accepted)
+
+TypeScript 7.0.2 (the native compiler) is the latest, but typescript-eslint 8.72.0 supports `>=4.8.4 <6.1.0`. We pin TypeScript 6.0.3 and revisit when typescript-eslint supports 7. Source: https://typescript-eslint.io/users/dependency-versions/, checked 2026-10-24.
+
+## D-017 · UI building blocks (Step 2, Accepted; Step 5 applies it)
+
+Radix primitives (`radix-ui` 1.8.1) for accessible behavior, our own components styled with CSS Modules and CSS custom-property design tokens (built into Vite), `cmdk` for the command palette, `react-resizable-panels` for panels and `lucide-react` for icons. Navigation is a typed state, not a router library; data access is a small hook over `window.api`, not a state library.
+Alternatives: Tailwind with shadcn/ui (adds a build plugin and utility classes; its components use Radix anyway), Mantine or Fluent UI (heavier, harder to give the dense custom look), react-router and state libraries (not needed for eleven fixed sections in one window).
+
+## D-018 · Own structured logger (Step 2, Accepted; Step 4 builds it)
+
+A small logger writes JSON lines with size-based rotation (5 MB, five files) and redacts with the same `Redactor` that protects previews and context packs. Alternatives: electron-log 5.4.4 and pino 10.4.0 (pino's rotation needs worker-thread transports that complicate packaging; both would still need our redaction).
+
+## D-019 · Test tools and what `npm test` means (Step 2, Accepted)
+
+Vitest 5.0.5 runs unit, integration and component tests (jsdom 30.1.3 with Testing Library) on system Node 24; Playwright 1.64.1 `_electron` runs a few end-to-end tests on the built app (`npm run test:e2e`). Unit tests on system Node are representative because it matches Electron's Node major; Electron-only APIs stay behind small interfaces. Live checks against installed tools are opt-in and never part of `npm test`. Playwright's Electron support is experimental (KI-007), so end-to-end tests stay few. Source: https://playwright.dev/docs/api/class-electron, checked 2026-10-24.
+
+## D-020 · Packaging with electron-builder and fuses, no updater (Step 2, Accepted; Step 27 applies it)
+
+electron-builder 26.18.0 for an NSIS installer and a portable build, and `@electron/fuses` 2.1.3 to turn off RunAsNode, NODE_OPTIONS and inspect arguments and to turn on ASAR integrity. No `electron-updater` (spec §24). Step 27 re-checks both versions before installing.
+
+## D-021 · No terminal emulator for now (Step 2, Accepted)
+
+node-pty and xterm.js are not added. Claude Code (`claude -p --output-format stream-json`) and Codex (`codex exec --json`) have documented structured non-interactive modes, which are better than parsing terminal output (spec §9A). node-pty is a native module. A later step that truly needs an interactive session adds them with its own ADR. Sources: https://code.claude.com/docs/en/headless and https://learn.chatgpt.com/docs/non-interactive-mode, checked 2026-10-24.
+
+## D-022 · IPC through an allowlisted, schema-checked bridge (Step 2, Accepted; Step 4 builds it)
+
+`window.api` exposes only `invoke` and `on` for channel and event names in a shared registry. Main validates the sender and the input (Zod) for every call and answers with a result envelope, because Electron passes only an error's message across `invoke`. Requests never carry absolute paths, executables, command arguments or shell strings; folders come from main's native dialog and files are `{ projectId, relativePath }`. Alternative: one named function per channel in the preload, which is more code for the same protection.
+
+## D-023 · Renderer on a custom `app://` scheme (Step 2, Accepted; Step 3 builds it)
+
+Production pages are served from `app://renderer/` by a `protocol.handle` handler that serves only the built renderer folder and sets the CSP header, following Electron's security checklist ("prefer usage of custom protocols" over `file://`, which can read any file). Source: https://www.electronjs.org/docs/latest/tutorial/security, checked 2026-10-24.
+
+## D-024 · App data folder independent of the display name (Step 2, Accepted)
+
+Main sets the data folder to `%APPDATA%\GameDevCommandCenter` before startup, so the configurable display name (spec §29I) never moves user data. Unpackaged dev and test runs may redirect it with `GDCC_USER_DATA_DIR`; packaged builds ignore that variable.
+
+## D-025 · Child processes on Windows (Step 2, Accepted; Step 4 builds it)
+
+Only `ProcessRunner` spawns, with argument arrays and no shell. Node's docs say `.bat` and `.cmd` files are not executable without a terminal and recommend running them through `cmd.exe`; many npm CLIs are `.cmd` shims, so the runner uses `%ComSpec% /d /s /c` for them only when every argument passes a strict character check, and sends prompts and other free text through stdin. On Windows `subprocess.kill()` ends only the direct child, so cancellation kills the owned process tree with `taskkill /T /F` after a grace period. Source: https://nodejs.org/docs/latest-v24.x/api/child_process.html, checked 2026-10-24.
+
+## D-026 · Claude Code runs load project hooks and MCP servers (Step 2, Accepted; Step 12 applies it)
+
+Claude Code's docs say a `claude -p` run without `--bare` runs the project's `.claude/settings.json` hooks and `.mcp.json` servers with no trust dialog. Before the first run in a project, the adapter lists them and asks the user, because that is running project code. `--bare` skips them but signs in with an API key rather than the subscription, so it is never the default (spec §9: no silent switch to metered billing). Source: https://code.claude.com/docs/en/headless, checked 2026-10-24.
+
+## D-027 · Migrations run all-or-nothing after a verified backup (Step 2, Accepted; Step 4 builds it)
+
+Applied migrations are recorded in a `schema_migrations` table with checksums. Before migrating, the app backs up the database with `node:sqlite`'s `backup()` and runs `quick_check` on the copy; then all pending migrations run in one transaction, so a failure leaves the database exactly as it was. A database newer than the app opens read-only. An unreadable database is never replaced; the user chooses on a recovery screen.

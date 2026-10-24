@@ -134,18 +134,19 @@ The user's step order differs from the spec's phase order in a few places. The r
 - **Goal:** A minimal Electron + React + TypeScript + Vite app that launches on Windows with secure defaults and working dev, test, lint and build commands.
 - **Depends on:** Step 2
 - **Scope:**
-  - Scaffold from the template chosen in Step 2 and commit the lockfile.
-  - Strict TypeScript, linting and formatting, Vitest.
-  - Secure window: context isolation, sandbox, Node integration off, CSP, blocked navigation and new windows; an empty typed preload bridge.
+  - First confirm Node.js 24 is installed (D-012); stop and tell the user if it is not.
+  - Write the electron-vite scaffold by hand in the layout of ARCHITECTURE.md section 3 (not the create-electron template, D-014), install the Step 3 packages at the versions pinned in ARCHITECTURE.md section 1, and commit the lockfile. The checklist is ARCHITECTURE.md section 16.
+  - Strict TypeScript, linting and formatting, Vitest, and Playwright for the Electron end-to-end test.
+  - Secure window: context isolation, sandbox, Node integration off, renderer served from `app://` with a CSP, blocked navigation and new windows; an empty typed preload bridge.
   - `.gitignore` for dependencies, build output, databases, logs and env files.
-  - npm scripts: `dev`, `build`, `typecheck`, `lint`, `test`, `check:docs` (wrapping the Step 1 check).
+  - npm scripts: `dev`, `build`, `typecheck`, `lint`, `test`, `test:e2e`, `check:docs` (wrapping the docs check and its tests).
   - README: how to install and run on Windows.
   - Use `assets/icon/nexus-ai.ico` (source `nexus-ai.png`) as the window and app icon, and make `scripts/launch.cmd` (the desktop shortcut target) start the dev app.
 - **Acceptance criteria:**
   - A clean clone installs and `npm run dev` opens the window on Windows.
   - `typecheck`, `lint`, `test` and `build` pass.
   - A test asserts the window's security settings; the renderer has no `require` or `process` access; CSP is present.
-  - The docs check passes.
+  - The docs check passes, which also confirms every `package.json` version matches its pin in ARCHITECTURE.md.
 - **Out of scope:** features and the database.
 
 ### Step 4 · Core application structure

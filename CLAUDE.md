@@ -5,7 +5,7 @@ This repository builds **GameDev Command Center**, a local-first Windows desktop
 ## How the build is organized
 
 - The build runs as **29 steps**, one project thread each, in order. Each step's goal, dependencies, acceptance criteria, model and effort are in [docs/ROADMAP.md](docs/ROADMAP.md). [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) shows which step owns each spec requirement.
-- Start every session by reading this file, [docs/STATUS.md](docs/STATUS.md) (current step and latest handoff), your step's block in ROADMAP.md, and the spec sections it lists. Then state the current step and its first sub-task.
+- Start every session by reading this file, [docs/STATUS.md](docs/STATUS.md) (current step and latest handoff), your step's block in ROADMAP.md, the spec sections it lists, and the parts of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) your step touches. Then state the current step and its first sub-task.
 - Work only on your step. If you find a missing requirement or a conflict with the spec, record it in docs/DECISIONS.md and flag it to the user instead of silently changing scope.
 - The local folder `V:\Project-Nexus-Forge` is the latest working copy; GitHub `Sonzzk/Project-Nexus-Forge` holds every stable version.
 
@@ -27,12 +27,14 @@ This repository builds **GameDev Command Center**, a local-first Windows desktop
 - Never put secrets, tokens, credentials, env files, local databases, logs or build output in Git, logs, prompts or screenshots. Redact them.
 - Mock providers live only in test code and are never shown as real activity.
 
-## Architecture rules (detailed design arrives in Step 2's `docs/ARCHITECTURE.md`)
+## Architecture rules (the full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 
 - Electron main process owns all trusted OS work. The renderer has no Node access, runs with context isolation and sandboxing, under a content security policy, and talks to main only through a small typed preload bridge with Zod-validated IPC. No generic filesystem or shell channels.
 - Keep UI, application logic, persistence, provider adapters and external tool execution in separate modules with explicit interfaces. Provider- and engine-specific code stays behind adapters.
 - Structured, rotated, redacted logs. Typed errors with actionable messages. Background processes are owned, cancellable and cleaned up on quit.
 - Strict TypeScript; no hard-coded local paths in code; minimal dependencies.
+- Every package is pinned to an exact version. Add or upgrade one only together with its row in ARCHITECTURE.md section 1 (version, license, source, date); the docs check compares it with `package.json`.
+- Paths and commands never come from the renderer: folders come from a native dialog in main, files are `{ projectId, relativePath }`, and only `ProcessRunner` spawns processes (argument arrays, no shell strings).
 
 ## Rules that span steps (see ROADMAP.md "Ordering conflicts")
 
@@ -44,7 +46,7 @@ This repository builds **GameDev Command Center**, a local-first Windows desktop
 ## Quality gates (before calling a task done)
 
 1. Check the behavior against the step's acceptance criteria.
-2. Run the tests and static checks. Today that is `node scripts/check-docs.mjs` and `node --test scripts/check-docs.test.mjs`. From Step 3 on: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run check:docs`. Update this list when commands change.
+2. Run the tests and static checks. Today that is `node scripts/check-docs.mjs` and `node --test scripts/check-docs.test.mjs`. From Step 3 on: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run check:docs`, plus `npm run test:e2e` when a change touches the window, preload, IPC or startup. Update this list when commands change.
 3. Start or build the app when practical and try the feature.
 4. Check for regressions and accidental damage (`git status`, `git diff`).
 5. Update the progress notes (below) and record limitations.

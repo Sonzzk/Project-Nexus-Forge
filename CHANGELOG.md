@@ -8,6 +8,20 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon. Steps 3 and 27 use it for the window and installer.
 - `scripts/launch.cmd`: desktop shortcut target. Starts the app with `npm run dev`; until Step 3 scaffolds the app it prints that the app is not built yet.
 
+## Step 2 · System design and dependencies (2026-10-24, tag `step-02`)
+
+### Added
+- `docs/ARCHITECTURE.md`: runtimes and pinned dependencies with license, source and verification date; process model; folder structure; owner folder and interface sketches for every spec §4 module; IPC design; security model covering every §4 and §14 rule; data model v1 with the migration and backup policy; feature-status manifest; error model; logging; process ownership and shutdown; testing strategy; risks; the Step 3 checklist.
+- Decisions D-011 to D-027 (Electron 45, Node.js 24, electron-vite, `node:sqlite`, TypeScript 6.0, UI building blocks, logging, tests, packaging, IPC, `app://` scheme, data folder, Windows processes, Claude Code project hooks, migrations).
+- Known issues KI-006 to KI-008.
+- The docs check now verifies that every pinned dependency has an exact version, license, date, step and https source; that `package.json` (from Step 3) uses exactly the pinned versions; and that every §4 module has a `src/` folder and sketched interfaces. Seven new tests cover it.
+
+### Changed
+- `README.md`: what the app is, current status and where things are; the original text is kept.
+- `CLAUDE.md`: points to ARCHITECTURE.md, adds the pinning and path/command rules and the end-to-end test gate.
+- `docs/ROADMAP.md`: Step 3 now writes the scaffold by hand from ARCHITECTURE.md and checks Node.js 24 first.
+- D-003 is accepted; KI-001 records the Node.js decision.
+
 ## Step 1 · Overall architecture and requirements (2026-10-24, tag `step-01`)
 
 ### Added

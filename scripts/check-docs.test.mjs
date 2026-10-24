@@ -9,22 +9,30 @@ import { checkDocs } from './check-docs.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Copy docs/ to a temp root, apply one edit, and return the check's errors.
-function errorsAfter(file, edit) {
+// Copy docs/ to a temp root, let `prepare` change it, and return the check's errors.
+function inTempCopy(prepare) {
   const root = mkdtempSync(join(tmpdir(), 'check-docs-'));
   try {
     cpSync(join(repo, 'docs'), join(root, 'docs'), { recursive: true });
+    prepare(root);
+    return checkDocs(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// Apply one edit to a file in docs/.
+const errorsAfter = (file, edit) =>
+  inTempCopy((root) => {
     const path = join(root, 'docs', file);
     // Same normalization as the check: Windows checkouts use CRLF, and `.` does not match `\r`.
     const before = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
     const after = edit(before);
     assert.notEqual(after, before, 'the edit must change the file');
     writeFileSync(path, after);
-    return checkDocs(root);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
+  });
+
+const errorsWithPackage = (pkg) => inTempCopy((root) => writeFileSync(join(root, 'package.json'), JSON.stringify(pkg)));
 
 test('the committed docs pass', () => {
   assert.deepEqual(checkDocs(repo), []);
@@ -58,4 +66,38 @@ test('a spec section without an owning step is caught', () => {
 test('an acceptance criterion without an owning step is caught', () => {
   const errors = errorsAfter('REQUIREMENTS.md', (s) => s.replace(/^\| §27\.6 \|.*\n/m, ''));
   assert.match(errors.join('\n'), /§27\.6 is not traced/);
+});
+
+test('a package.json that uses the pinned versions passes', () => {
+  assert.deepEqual(errorsWithPackage({ dependencies: { react: '19.3.1' }, devDependencies: { electron: '45.0.0' } }), []);
+});
+
+test('a version range in package.json is caught', () => {
+  const errors = errorsWithPackage({ devDependencies: { electron: '^45.0.0' } });
+  assert.match(errors.join('\n'), /electron is "\^45\.0\.0", not an exact version/);
+});
+
+test('a package missing from the pinned table is caught', () => {
+  const errors = errorsWithPackage({ dependencies: { 'left-pad': '1.3.0' } });
+  assert.match(errors.join('\n'), /left-pad is missing from the ARCHITECTURE\.md dependency table/);
+});
+
+test('a package.json version that differs from the pin is caught', () => {
+  const errors = errorsWithPackage({ devDependencies: { electron: '44.9.3' } });
+  assert.match(errors.join('\n'), /electron is 44\.9\.3 but ARCHITECTURE\.md pins 45\.0\.0/);
+});
+
+test('a pinned dependency without an https source is caught', () => {
+  const errors = errorsAfter('ARCHITECTURE.md', (s) => s.replace('| https://zod.dev |', '| zod docs |'));
+  assert.match(errors.join('\n'), /dependency zod has no https source/);
+});
+
+test('a §4 module without an owner is caught', () => {
+  const errors = errorsAfter('ARCHITECTURE.md', (s) => s.replace(/^\| Git integration \|.*\n/m, ''));
+  assert.match(errors.join('\n'), /module "Git integration" has no row/);
+});
+
+test('a module interface that is not sketched is caught', () => {
+  const errors = errorsAfter('ARCHITECTURE.md', (s) => s.replace('export interface GitService', 'export interface GitThing'));
+  assert.match(errors.join('\n'), /interface GitService \(module "Git integration"\) is not sketched/);
 });
