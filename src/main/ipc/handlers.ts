@@ -5,6 +5,7 @@ import type { GitService } from '../git';
 import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
+import type { ProviderService } from '../providers';
 import type { AgentService, PlanningService, TaskService } from '../planning';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
@@ -26,6 +27,7 @@ export interface HandlerServices {
   tasks: TaskService;
   planning: PlanningService;
   agents: AgentService;
+  providers: ProviderService;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -149,6 +151,16 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('agents:runs', ({ taskId }) => services.agents.runs(taskId));
   ipc.handle('agents:prompt', ({ taskId, role }) => services.agents.prompt(taskId, role));
   ipc.handle('agents:record', ({ runId, outcome, note }) => services.agents.recordOutcome(runId, outcome, note));
+
+  ipc.handle('providers:list', () => services.providers.list());
+  ipc.handle('providers:check', ({ provider }) => services.providers.check(provider));
+  ipc.handle('providers:models', ({ provider }) => services.providers.models(provider));
+  ipc.handle('providers:warmUp', ({ model }) => services.providers.warmUp(model));
+  ipc.handle('providers:pull', ({ model }) => services.providers.pull(model));
+  ipc.handle('providers:cancel', () => services.providers.cancel());
+  ipc.handle('providers:generate', ({ choice, prompt, purpose }) => services.providers.generate(choice, prompt, purpose));
+  ipc.handle('providers:suggestSteps', (input) => services.providers.suggestSteps(input));
+  ipc.handle('providers:draftDocument', (input) => services.providers.draftDocument(input));
 
   ipc.handle('storage:status', () => services.storage.status());
   ipc.handle('storage:backupNow', () => services.storage.backupNow());

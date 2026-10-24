@@ -6,7 +6,7 @@ Verified bugs, limitations and workarounds. Remove an entry only when the fix is
 
 `gh` is not on PATH. Pushing works through Git with the Git Credential Manager, so the build does not need it. Tasks that would use `gh` (pull requests, repository settings) need it installed first, with the user's approval.
 
-## KI-003 · Ollama's local API did not answer (found in Step 1, open)
+## KI-003 · Ollama's local API did not answer (found in Step 1, handled in Step 12)
 
 Ollama is installed (`%LOCALAPPDATA%\Programs\Ollama\ollama.exe`), but `http://localhost:11434/api/version` did not respond within 3 seconds on 2026-10-24, most likely because Ollama was not running. Step 12 must report "installed but not running" clearly instead of failing or pretending.
 
@@ -27,7 +27,7 @@ Node 24's docs mark `node:sqlite` as stability 1.2, "Release candidate" (since 2
 Playwright's docs say it "has experimental support for Electron automation" (Electron v21 and later). End-to-end tests stay few and focused on what only the real app can show (window security, startup, persistence across restarts); logic is tested with Vitest (D-019).
 Step 3 checked it: Playwright 1.64.1 launches and drives the built Electron 45 app, and the six end-to-end security tests pass. It needs the app built first (`npm run test:e2e` does that).
 
-## KI-008 · Claude Code 2.1.197 is older than the documented behavior (found in Step 2, open)
+## KI-008 · Claude Code 2.1.197 is older than the documented behavior (found in Step 2, handled in Step 12)
 
 The installed Claude Code is 2.1.197 (Step 1 check). The current headless docs describe options added later, for example `--permission-prompts` (2.1.259 or later) and `-p` runs starting in Manual mode (2.1.302 or later). Step 12 must detect the version and derive capabilities from it instead of assuming the documented flags exist. Updating Claude Code is the user's choice.
 
@@ -60,3 +60,9 @@ The board has no drag and drop (buttons offer the valid moves). Milestones are a
 ## KI-015 · Agent roles are records until Steps 12 and 13 (found in Step 11, accepted)
 
 No agent can be started yet: the Run buttons are disabled and labeled `Upcoming · Step 12`. Run states other than queued, completed, failed and cancelled can only be set by the runner that arrives in Steps 12 and 13, so a stored run will normally sit in queued until someone records an outcome by hand. The prompt templates are first drafts; Step 12 checks them against real provider behavior. Providers are free text on the task until Step 12.
+
+Update (Step 12): KI-003 and KI-008 are handled. The Integrations page reports "Ollama is installed but not running" with the fix, and Claude Code's capabilities are read from what each installed version accepts. This PC has two Claude Code installs (2.1.197 on PATH and 2.1.278 in `%USERPROFILE%\.local\bin`); the app uses the second because it looks in that folder first.
+
+## KI-016 · Provider integrations: what was and was not proven live (found in Step 12, accepted)
+
+Live on this PC (2026-10-24, statuses only, no prompt sent): Ollama installed and detected as not running; with `ollama serve` started for the check, version 0.34.2 and zero models, reported as "needs setup"; the process tree started for the check was stopped afterwards. Claude Code 2.1.278 detected with its options. Codex CLI is not installed. Not proven live: a real Ollama generation (no models are installed and none may be downloaded without approval; the generation, cancel, timeout and download paths are tested against recorded responses on a local stand-in server), a real Claude Code run (it would use the subscription), and any Codex run (its event format is read tolerantly, D-037). Sign-in state of Claude Code and Codex is not checked. Usage and quota are never shown unless a provider returns them; Step 14 stores what Claude Code reports as an estimate.

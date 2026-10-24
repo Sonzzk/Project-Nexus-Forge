@@ -200,7 +200,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         role: role.id,
         writeCapable: role.writeCapable,
         prompt: renderPrompt(role, task, projectName(task.projectId)),
-        note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Steps 12 and 13.',
+        note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Step 13.',
       };
     },
 

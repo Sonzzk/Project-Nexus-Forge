@@ -61,6 +61,15 @@ export const CHANNELS = [
   'agents:runs',
   'agents:prompt',
   'agents:record',
+  'providers:list',
+  'providers:check',
+  'providers:models',
+  'providers:warmUp',
+  'providers:pull',
+  'providers:cancel',
+  'providers:generate',
+  'providers:suggestSteps',
+  'providers:draftDocument',
   'storage:status',
   'storage:backupNow',
   'storage:restore',
@@ -69,7 +78,7 @@ export const CHANNELS = [
   'storage:applyImport',
 ] as const;
 
-export const EVENTS = ['activity:appended'] as const;
+export const EVENTS = ['activity:appended', 'providers:progress'] as const;
 
 export type ChannelName = (typeof CHANNELS)[number];
 export type EventName = (typeof EVENTS)[number];

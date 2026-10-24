@@ -14,6 +14,16 @@ import {
   PackSummarySchema,
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import {
+  GENERATE_PURPOSES,
+  GenerateResultSchema,
+  MODEL_NAME,
+  OllamaModelSchema,
+  PROVIDER_IDS,
+  ProviderChoiceSchema,
+  ProviderStatusSchema,
+  SuggestStepsResultSchema,
+} from '../providers';
 import { AuditReportSchema, AuditSummarySchema, GitSummarySchema } from '../audit';
 import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
@@ -179,6 +189,26 @@ export const contract = {
   'agents:record': {
     request: z.strictObject({ runId: z.string().max(64), outcome: z.enum(['completed', 'failed', 'cancelled']), note: z.string().max(500) }),
     response: RunSchema,
+  },
+  // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
+  // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.
+  'providers:list': { request: noInput, response: z.array(ProviderStatusSchema) },
+  'providers:check': { request: z.strictObject({ provider: z.enum(PROVIDER_IDS) }), response: ProviderStatusSchema },
+  'providers:models': { request: z.strictObject({ provider: z.enum(PROVIDER_IDS) }), response: z.array(OllamaModelSchema) },
+  'providers:warmUp': { request: z.strictObject({ model: z.string().regex(MODEL_NAME) }), response: z.strictObject({ loaded: z.literal(true) }) },
+  'providers:pull': { request: z.strictObject({ model: z.string().regex(MODEL_NAME) }), response: z.strictObject({ pulled: z.boolean() }) },
+  'providers:cancel': { request: noInput, response: z.strictObject({ cancelled: z.boolean() }) },
+  'providers:generate': {
+    request: z.strictObject({ choice: ProviderChoiceSchema, prompt: z.string().min(1).max(20_000), purpose: z.enum(GENERATE_PURPOSES) }),
+    response: GenerateResultSchema,
+  },
+  'providers:suggestSteps': {
+    request: z.strictObject({ projectId: z.string().max(64), choice: ProviderChoiceSchema, title: z.string().min(1).max(200), description: z.string().max(8000) }),
+    response: SuggestStepsResultSchema,
+  },
+  'providers:draftDocument': {
+    request: z.strictObject({ projectId: z.string().max(64), choice: ProviderChoiceSchema, docType: z.enum(DOC_TYPES), instruction: z.string().max(2000), currentText: z.string().max(100_000) }),
+    response: GenerateResultSchema,
   },
   // Data and backups. Backups are named by file name; export, import and restore choose files in native dialogs in main,
   // and anything that overwrites data or adds a project folder is confirmed there too.

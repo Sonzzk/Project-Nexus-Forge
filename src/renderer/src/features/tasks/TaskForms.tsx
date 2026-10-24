@@ -17,7 +17,9 @@ import {
   type TemplateId,
   type UsageCategory,
 } from '@shared/tasks';
+import type { ProviderChoice } from '@shared/providers';
 import type { PlanningApi } from '../../lib/planning';
+import { ProviderPicker } from '../integrations/ProviderPicker';
 
 const lines = (text: string): string[] => text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 
@@ -201,6 +203,30 @@ export function BreakdownForm({ projectId, planning, onClose }: { projectId: str
   const [milestoneId, setMilestoneId] = useState<string | null>(null);
   const [steps, setSteps] = useState('');
   const [chain, setChain] = useState(true);
+  const [choice, setChoice] = useState<ProviderChoice | undefined>();
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState('');
+  const [suggestError, setSuggestError] = useState('');
+  const suggest = (): void => {
+    if (choice === undefined) return;
+    setSuggesting(true);
+    setSuggestion('');
+    setSuggestError('');
+    void window.api.invoke('providers:suggestSteps', { projectId, choice, title, description }).then((result) => {
+      setSuggesting(false);
+      if (!result.ok) {
+        setSuggestError(`${result.error.message} ${result.error.hint ?? ''}`.trim());
+        return;
+      }
+      if (!result.value.sent) {
+        setSuggestion('Nothing was sent.');
+        return;
+      }
+      const text = result.value.steps.map((step) => (step.acceptance.length === 0 ? step.title : `${step.title} :: ${step.acceptance.join(' | ')}`)).join('\n');
+      setSteps((current) => (current.trim() === '' ? text : `${current.trimEnd()}\n${text}`));
+      setSuggestion(`${result.value.steps.length} steps suggested. Review and edit them below; no task has been created.`);
+    });
+  };
   const parsed = lines(steps).map((line) => {
     const [stepTitle = '', criteria = ''] = line.split('::');
     return { title: stepTitle.trim(), acceptance: criteria.split('|').map((c) => c.trim()).filter(Boolean) };
@@ -227,6 +253,23 @@ export function BreakdownForm({ projectId, planning, onClose }: { projectId: str
           <label htmlFor="breakdown-milestone">Milestone</label>
           <MilestoneSelect id="breakdown-milestone" milestones={planning.milestones} value={milestoneId} onChange={setMilestoneId} />
         </div>
+        <details>
+          <summary>Suggest steps with AI (optional)</summary>
+          <p className="muted">You choose the provider. Only the feature name and description above are sent, never project files. A cloud provider asks you first.</p>
+          <ProviderPicker idPrefix="breakdown" onChange={setChoice} />
+          <div className="actions">
+            <button type="button" className="btn" disabled={choice === undefined || title.trim() === '' || suggesting} onClick={suggest}>
+              {suggesting ? 'Asking…' : 'Suggest steps'}
+            </button>
+            {suggesting && (
+              <button type="button" className="btn" onClick={() => void window.api.invoke('providers:cancel', {})}>
+                Stop
+              </button>
+            )}
+          </div>
+          {suggestion !== '' && <p role="status">{suggestion}</p>}
+          {suggestError !== '' && <p role="alert">{suggestError}</p>}
+        </details>
         <label>
           Steps <span className="muted">(one per line)</span>
           <textarea value={steps} rows={6} placeholder={'Add the crouch input :: C toggles crouch | works with a controller\nLower the camera'} onChange={(event) => setSteps(event.target.value)} />

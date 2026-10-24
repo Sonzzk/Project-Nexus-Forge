@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 12 · Provider integrations (2026-10-24, tag `step-12`)
+
+### Added
+- A typed provider contract and real adapters for Ollama (its documented local API: version, models with context length, load, streaming generation, cancel, timeouts, download with progress after a confirmation), Claude Code and Codex CLI (non-interactive, read-only runs with the prompt on stdin; capabilities read from the installed version's own options). Missing or stopped tools get clear messages, never fake success.
+- The Integrations page and a dashboard Provider connectivity card. Usage and quota show "Unavailable from this provider" unless the provider returns them.
+- First uses: "Suggest steps with AI" in the feature breakdown and "Draft with AI" in the memory editor. You pick the provider; a cloud provider shows where the text goes and asks first; results appear for review and nothing is created or saved automatically.
+- Schema v7, nine channels and one event, four settings. Decision D-037, known issue KI-016.
+
 ## Step 11 · Agent roles and workflows (2026-10-24, tag `step-11`)
 
 ### Added

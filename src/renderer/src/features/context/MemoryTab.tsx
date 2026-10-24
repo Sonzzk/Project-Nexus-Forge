@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { DOC_INFO, MEMORY_STORAGES, docTemplate, type DocType, type MemoryOverview, type MemoryPreview, type MemoryStorage } from '@shared/context';
 import type { SerializedError } from '@shared/errors';
 import type { Project } from '@shared/projects';
+import type { ProviderChoice } from '@shared/providers';
+import { ProviderPicker } from '../integrations/ProviderPicker';
 
 const STORAGE_LABELS: Record<MemoryStorage, string> = {
   app: 'In the app (private database)',
@@ -41,6 +43,10 @@ export function MemoryTab({ project, preload }: { project: Project; preload: { t
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<MemoryPreview | undefined>();
   const [message, setMessage] = useState('');
+  const [choice, setChoice] = useState<ProviderChoice | undefined>();
+  const [instruction, setInstruction] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const [before, setBefore] = useState<string | undefined>();
 
   const [version, setVersion] = useState(0);
   const [request, setRequest] = useState<{ type: DocType; startingText?: string; n: number } | undefined>();
@@ -216,6 +222,66 @@ export function MemoryTab({ project, preload }: { project: Project; preload: { t
               setMessage('');
             }}
           />
+          <details>
+            <summary>Draft with AI (optional)</summary>
+            <p className="muted">
+              You choose the provider. Only the instruction and the text in the box are sent, never other project files, and a cloud provider asks you first. The draft goes into the box; nothing is
+              saved until you preview and save it.
+            </p>
+            <ProviderPicker idPrefix="draft" onChange={setChoice} />
+            <label>
+              What should it say?
+              <input value={instruction} maxLength={2000} onChange={(event) => setInstruction(event.target.value)} />
+            </label>
+            <div className="actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={choice === undefined || drafting}
+                onClick={() => {
+                  if (choice === undefined) return;
+                  setDrafting(true);
+                  void window.api.invoke('providers:draftDocument', { projectId: project.id, choice, docType: editing.type, instruction, currentText: text }).then((result) => {
+                    setDrafting(false);
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
+                    }
+                    setError(undefined);
+                    if (!result.value.sent) {
+                      setMessage('Nothing was sent.');
+                      return;
+                    }
+                    setBefore(text);
+                    setText(result.value.text);
+                    setPreview(undefined);
+                    setMessage('The draft is in the box. Use Preview changes to compare it with what is saved.');
+                  });
+                }}
+              >
+                {drafting ? 'Drafting…' : 'Draft'}
+              </button>
+              {drafting && (
+                <button type="button" className="btn" onClick={() => void window.api.invoke('providers:cancel', {})}>
+                  Stop
+                </button>
+              )}
+              {before !== undefined && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setText(before);
+                    setBefore(undefined);
+                    setPreview(undefined);
+                    setMessage('Your earlier text is back.');
+                  }}
+                >
+                  Restore my text
+                </button>
+              )}
+            </div>
+          </details>
           <div className="actions">
             <button
               type="button"

@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 11 · Agent roles and workflows: done (2026-10-24, tag `step-11`)
-**Next step:** Step 12 · Provider integrations (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-12--provider-integrations).
+**Current step:** Step 12 · Provider integrations: done (2026-10-24, tag `step-12`)
+**Next step:** Step 13 · Agent orchestration and routing (Opus · Extra High), see [ROADMAP.md](ROADMAP.md#step-13--agent-orchestration-and-routing).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -16,6 +16,7 @@
 - **Step 9.** Project memory (app database by default; project folder or a documentation folder inside it only after a diff preview and a native confirmation), context packs with reasons, exclusions, a full preview and staleness, session handoffs and the dashboard card (ARCHITECTURE.md section 22, D-034). Verified by all six gates; the project-folder write was tested on fixtures only.
 - **Step 10.** Tasks and Roadmap: lifecycle, dependencies, milestones with scope tiers, board, list and roadmap views, templates, manual breakdown, explained recommendation, bugs and risks register, snapshots, portfolio and dashboard cards (ARCHITECTURE.md section 23, D-035). Verified by all six gates.
 - **Step 11.** Six agent roles (only the implementer can write), the nine run states with a tested state machine, workflow templates with optional reviewer and QA steps, queued run records, prompt preview and the Agent work section of the task detail; no program is started (ARCHITECTURE.md section 24, D-036). Verified by all six gates.
+- **Step 12.** Provider contract, Ollama / Claude Code / Codex CLI adapters, the Integrations page, a dashboard connectivity card, and AI-assisted step suggestions and document drafts that are only ever previewed (ARCHITECTURE.md section 25, D-037). Verified by all six gates and by live status checks on this PC (below).
 
 ## In progress
 - Nothing.
@@ -25,10 +26,10 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 12: the provider interface and real, capability-detected adapters for Ollama, Claude Code and Codex CLI, an Integrations page, and AI-assisted task breakdown and document drafting with a manually chosen provider, always previewed.
+- Step 13 (needs Opus): routing profiles, the run queue with the single-writer lock, bounded retries and approval before escalating, and the resource monitor with the local-inference policy.
 
 ## Application feature status
-The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
+The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -46,6 +47,24 @@ The app has a working shell, a project registry with detection and overrides, re
 | GPU | NVIDIA GeForce RTX 3060, 12288 MiB, driver 610.74 (`nvidia-smi` available) |
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
+
+## Live checks of the providers on this PC (2026-10-24)
+- **Ollama (before it was started):** installed at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe`; the app reported "Ollama is installed but not running".
+- **Ollama (with `ollama serve` started for the check and stopped afterwards by process id):** version 0.34.2, zero models, reported as "needs setup". No model was downloaded and no prompt was sent.
+- **Claude Code:** found at `%USERPROFILE%\.local\bin\claude.exe`, version 2.1.278, with `-p`, streaming output and plan mode detected as available (a second install, 2.1.197, is on PATH). No prompt was sent, so no subscription usage was spent; the sign-in state is not checked.
+- **Codex CLI:** not installed, reported as "Not installed ... It is optional".
+- **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
+- **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 12
+- **Requested:** a typed provider interface with capability detection, real adapters for Ollama, Claude Code and Codex CLI behind it, an Integrations page with actionable messages and "Unavailable from this provider" for quotas, no hosted call without showing the destination, no write-capable run, and AI-assisted task breakdown and document drafting with a manually chosen provider that is always previewed.
+- **Changed:** `src/main/providers/` (`ollama.ts`, `cli.ts`, `service.ts`, `locate.ts`, `types.ts`), `src/shared/providers.ts`, migration `0007_providers.sql`, nine `providers:*` channels and the `providers:progress` event, four `providers.*` settings, the Integrations page and `ProviderPicker`, AI sections in the breakdown form and the memory editor, the Provider connectivity card, manifest states (Integrations available; the workbench and Run an agent moved to Step 13, agent sessions to Step 17), the ESLint exception for `fetch` in the Ollama adapter, test helpers (`fixture-server`, `fake-runner`, `mock-provider`) and fixtures, `test/e2e/providers.e2e.ts`; ARCHITECTURE.md section 25, D-037, KI-016, DATA.md schema v7, CHANGELOG and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (714 of 714), `build`, `check:docs` and `test:e2e` (34 of 34), plus the live checks above.
+- **Unfinished:** nothing in Step 12. Not built on purpose: running agents on tasks, the queue, routing and the resource monitor (Step 13), usage numbers (Step 14), persistent approvals (Step 15).
+- **Known risks:** Codex's JSON event shape is read tolerantly and was never run; Claude Code's sign-in is only discovered when a request fails; a model's size is not known before a download.
+- **Relevant files:** `src/main/providers/service.ts`, `src/main/providers/ollama.ts`, `src/main/providers/cli.ts`, `src/renderer/src/features/integrations/IntegrationsPage.tsx`.
+- **What Step 13 will do (Opus · Extra High):** routing profiles (Manual, Local First, Balanced, Cloud First) with per-role overrides and a visible routing choice before cloud work; a run queue with priorities, cancellation and duplicate-launch prevention; a per-project single-writer lock that survives restarts; bounded retries and approval before escalating to a more expensive model; and a resource monitor with the local-inference policy (thresholds, heavy-workload detection, never terminating other applications). It builds on `ProviderService`, the agent run records of Step 11 and the process runner of Step 4.
+- **Next task:** Step 13 · Agent orchestration and routing.
 
 ## Handoff: Step 11
 - **Requested:** agent roles, their default permissions and visible workflow states, without launching any agent: a role registry, run records linked to tasks with a state machine, workflow templates that show the expected action and provider before anything runs, role choice in the task detail, Run buttons labeled Upcoming, and a test that this step spawns no process.

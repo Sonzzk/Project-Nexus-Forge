@@ -13,6 +13,8 @@ import { createIpc, type InvokeEventLike } from './handle';
 import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
+import { createProviderService } from '../providers';
+import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createTaskService } from '../planning';
 import { createAuditService, createHandoffService, createMemoryService, createPackService } from '../scanning';
 import { createStorageService, createTransfer, loadMigrations, type StorageUi } from '../storage';
@@ -26,6 +28,7 @@ afterEach(removeTempDirs);
 
 let pickedFolder: string | undefined;
 let revealed: string[] = [];
+const mocks = {} as { ollama: ReturnType<typeof createMockProvider>; claude: ReturnType<typeof createMockProvider> };
 const uiCalls: string[] = [];
 let uiAnswer = true;
 
@@ -61,6 +64,17 @@ async function setup() {
   const tasks = createTaskService({ db, projects, activity, requirePlanApproval: () => false });
   const planning = createPlanningService({ db, projects, activity });
   const agents = createAgentService({ db, projects, tasks, activity });
+  mocks.ollama = createMockProvider('ollama', { modelList: [{ name: 'llama3.2:1b', sizeBytes: 1, modifiedAt: null, family: 'llama', parameterSize: '1B', quantization: null, contextLength: 4096, loaded: false }] });
+  mocks.claude = createMockProvider('claude-code');
+  const providers = createProviderService({
+    db, projects, activity, logger, redactor,
+    adapters: { ollama: mocks.ollama, 'claude-code': mocks.claude, codex: createMockProvider('codex') },
+    confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
+    progress: () => undefined,
+    ollamaEndpoint: () => 'http://127.0.0.1:11434',
+    env: () => ({}),
+    sandboxDir: () => 'C:\\sandbox',
+  });
   const storage = createStorageService({
     db,
     userDataDir: dir,
@@ -85,6 +99,7 @@ async function setup() {
     tasks,
     planning,
     agents,
+    providers,
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -401,6 +416,63 @@ describe('agent channels', () => {
     expect(await call('agents:preview', { taskId, workflow: 'run-everything', includeReviewer: true, includeQa: true })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(await call('agents:prompt', { taskId, role: 'root' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(await call('agents:prompt', { taskId, role: 'reviewer' })).toMatchObject({ ok: true, value: { writeCapable: false } });
+  });
+});
+
+describe('provider channels', () => {
+  it('lists the three providers with honest statuses and no quota number, checks one, and lists models', async () => {
+    const { call } = await setup();
+    const list = (await call('providers:list')) as { ok: true; value: { id: string; status: string; quota: string }[] };
+    expect(list.value.map((p) => [p.id, p.status])).toEqual([['ollama', 'working'], ['claude-code', 'installed'], ['codex', 'installed']]);
+    expect(list.value.every((p) => p.quota === 'Unavailable from this provider')).toBe(true);
+    expect(await call('providers:check', { provider: 'codex' })).toMatchObject({ ok: true, value: { id: 'codex' } });
+    expect(await call('providers:models', { provider: 'ollama' })).toMatchObject({ ok: true, value: [{ name: 'llama3.2:1b', contextLength: 4096 }] });
+    expect(await call('providers:models', { provider: 'claude-code' })).toEqual({ ok: true, value: [] });
+  });
+
+  it('sends a cloud request only after the native confirmation, and a local one without it', async () => {
+    const { call } = await setup();
+    mocks.ollama.answer = 'Local answer';
+    expect(await call('providers:generate', { choice: { provider: 'ollama', model: 'llama3.2:1b' }, prompt: 'Say OK', purpose: 'connection-test' })).toMatchObject({ ok: true, value: { sent: true, text: 'Local answer' } });
+    expect(uiCalls).toEqual([]);
+    uiAnswer = false;
+    expect(await call('providers:generate', { choice: { provider: 'claude-code', model: '' }, prompt: 'Say OK', purpose: 'connection-test' })).toMatchObject({ ok: true, value: { sent: false } });
+    expect(uiCalls).toEqual(['confirm']);
+    expect(mocks.claude.requests).toEqual([]);
+    uiAnswer = true;
+  });
+
+  it('accepts no program, folder, flag or unknown field, and no bad model name', async () => {
+    const { call } = await setup();
+    const good = { choice: { provider: 'claude-code', model: '' }, prompt: 'hi', purpose: 'connection-test' };
+    expect(await call('providers:generate', { ...good, executable: 'C:\\evil.exe' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('providers:generate', { ...good, choice: { provider: 'claude-code', model: '', args: ['--dangerously-skip-permissions'] } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('providers:generate', { ...good, choice: { provider: 'ollama', model: 'a b;c' } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('providers:generate', { ...good, choice: { provider: 'gemini', model: '' } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('providers:pull', { model: '..\\..\\x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('providers:generate', { ...good, purpose: 'run-everything' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+
+  it('warms a model, downloads only after confirming, and cancels when nothing is running', async () => {
+    const { call } = await setup();
+    expect(await call('providers:warmUp', { model: 'llama3.2:1b' })).toEqual({ ok: true, value: { loaded: true } });
+    uiAnswer = false;
+    expect(await call('providers:pull', { model: 'llama3.2:1b' })).toEqual({ ok: true, value: { pulled: false } });
+    expect(mocks.ollama.pulled).toEqual([]);
+    uiAnswer = true;
+    expect(await call('providers:pull', { model: 'llama3.2:1b' })).toEqual({ ok: true, value: { pulled: true } });
+    expect(await call('providers:cancel')).toEqual({ ok: true, value: { cancelled: false } });
+  });
+
+  it('suggests steps for a project through the chosen provider and returns them for review', async () => {
+    const { call } = await setup();
+    pickedFolder = copyFixture('audit-godot');
+    const added = (await call('projects:pickAndAdd')) as { ok: true; value: { project: { id: string } } };
+    mocks.ollama.answer = '{"steps":[{"title":"Add input","acceptance":["It works"]}]}';
+    expect(await call('providers:suggestSteps', { projectId: added.value.project.id, choice: { provider: 'ollama', model: 'llama3.2:1b' }, title: 'Crouch', description: 'd' })).toMatchObject({ ok: true, value: { sent: true, steps: [{ title: 'Add input', acceptance: ['It works'] }] } });
+    expect(await call('tasks:list', { projectId: added.value.project.id })).toEqual({ ok: true, value: [] }); // suggested, not created
+    mocks.ollama.answer = 'I think you should crouch.';
+    expect(await call('providers:suggestSteps', { projectId: added.value.project.id, choice: { provider: 'ollama', model: 'llama3.2:1b' }, title: 'Crouch', description: '' })).toMatchObject({ ok: false, error: { code: 'TOOL_FAILED' } });
   });
 });
 

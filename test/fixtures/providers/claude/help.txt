@@ -1,0 +1,15 @@
+Usage: claude [options] [command] [prompt]
+
+Options:
+  --output-format <format>              Output format (only works with --print):
+                                        "text" (default), "json" (single
+                                        result), or "stream-json" (realtime
+                                        streaming) (choices: "text", "json",
+                                        "stream-json")
+  --permission-mode <mode>              Permission mode to use for the session
+                                        (choices: "acceptEdits", "auto",
+                                        "bypassPermissions", "default",
+                                        "dontAsk", "plan")
+  -p, --print                           Print response and exit (useful for
+                                        pipes).
+  --verbose                             Override verbose mode setting

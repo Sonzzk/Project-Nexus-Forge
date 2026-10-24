@@ -65,7 +65,7 @@ test('a workflow is shown with its providers and blockers, needs the plan approv
     await expect(runs.getByRole('listitem')).toHaveCount(2);
     await expect(runs).toContainText('Queued');
     await expect(panel.getByRole('button', { name: /^Run the workflow/ })).toBeDisabled();
-    await expect(panel.getByRole('button', { name: /^Run the workflow/ })).toContainText('Upcoming · Step 12');
+    await expect(panel.getByRole('button', { name: /^Run the workflow/ })).toContainText('Upcoming · Step 13');
     expect(snapshotTree(folder)).toEqual(before);
   } finally {
     await app.close();

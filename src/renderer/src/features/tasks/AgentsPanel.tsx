@@ -46,7 +46,7 @@ export function AgentsPanel({ task }: { task: Task }) {
     <section aria-label="Agent work for this task">
       <h3>Agent work</h3>
       <p className="muted">
-        Roles and workflows are planned and recorded here. Running an agent arrives in Steps 12 and 13, so nothing below starts a program or sends anything to a
+        Roles and workflows are planned and recorded here. Running an agent arrives in Step 13, so nothing below starts a program or sends anything to a
         provider.
       </p>
       {error !== undefined && (
@@ -183,7 +183,7 @@ export function AgentsPanel({ task }: { task: Task }) {
               <div className="muted">{step.action}</div>
               {step.kind === 'agent' && (
                 <div className="muted">
-                  Provider: {step.provider === '' ? 'not chosen yet (providers arrive in Step 12)' : step.provider}
+                  Provider: {step.provider === '' ? 'not chosen yet (name one on the task; real providers are on the Integrations page)' : step.provider}
                   {step.usage !== '' && ` · usage: ${step.usage}`}
                 </div>
               )}

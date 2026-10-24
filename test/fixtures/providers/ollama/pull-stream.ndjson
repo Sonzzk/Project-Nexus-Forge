@@ -1,0 +1,5 @@
+{"status":"pulling manifest"}
+{"status":"pulling abc","digest":"sha256:abc","total":1000,"completed":250}
+{"status":"pulling abc","digest":"sha256:abc","total":1000,"completed":1000}
+{"status":"verifying sha256 digest"}
+{"status":"success"}

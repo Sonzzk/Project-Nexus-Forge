@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { AppError } from '@shared/errors';
@@ -15,6 +16,7 @@ import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
+import { createClaudeCodeAdapter, createCodexAdapter, createOllamaAdapter, createProviderService, locateProgram, sandboxPath } from './providers';
 import { agentTables, createAgentService, createPlanningService, createTaskService, planningTables } from './planning';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
@@ -236,6 +238,37 @@ async function startServices(): Promise<void> {
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
   const planning = createPlanningService({ db, projects, activity });
   const agents = createAgentService({ db, projects, tasks, activity });
+
+  // AI providers. Each adapter finds its own program or address; credentials stay with the tools and are never read.
+  const sandboxDir = sandboxPath(userDataDir);
+  mkdirSync(sandboxDir, { recursive: true });
+  const timeoutMs = (): number => settingsStore.get('providers.timeoutSeconds') * 1000;
+  const cli = { runner, env: () => process.env, timeoutMs, sandboxDir: () => sandboxDir, logger: logger.child('providers') };
+  const localPrograms = join(process.env['LOCALAPPDATA'] ?? app.getPath('home'), 'Programs');
+  const providers = createProviderService({
+    db,
+    projects,
+    activity,
+    logger: logger.child('providers'),
+    redactor,
+    confirm: (options) => ui.confirm(options),
+    progress: (progress) => emit('providers:progress', progress),
+    ollamaEndpoint: () => settingsStore.get('providers.ollamaEndpoint'),
+    env: () => process.env,
+    sandboxDir: () => sandboxDir,
+    adapters: {
+      ollama: createOllamaAdapter({
+        endpoint: () => settingsStore.get('providers.ollamaEndpoint'),
+        allowRemote: () => settingsStore.get('providers.ollamaAllowRemote'),
+        timeoutMs,
+        contextLength: () => settingsStore.get('providers.ollamaContextLength'),
+        locateProgram: () => locateProgram(['ollama'], [join(localPrograms, 'Ollama')]),
+        logger: logger.child('ollama'),
+      }),
+      'claude-code': createClaudeCodeAdapter({ ...cli, locate: () => locateProgram(['claude'], [join(app.getPath('home'), '.local', 'bin')]) }),
+      codex: createCodexAdapter({ ...cli, locate: () => locateProgram(['codex']) }),
+    },
+  });
   registerHandlers(ipc, {
     logger,
     settings: settingsStore,
@@ -249,6 +282,7 @@ async function startServices(): Promise<void> {
     tasks,
     planning,
     agents,
+    providers,
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,

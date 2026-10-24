@@ -6,6 +6,7 @@ import { FEATURES, isUsable } from '@shared/feature-status';
 import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
 import { allowedNext } from '@shared/tasks';
 import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
+import { attachProviders, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
@@ -818,7 +819,7 @@ describe('agent work on a task', () => {
     const { user, panel } = await openTask();
     const run = within(panel).getByRole('button', { name: /^Run the workflow/ });
     expect((run as HTMLButtonElement).disabled).toBe(true);
-    expect(run.textContent).toContain('Upcoming · Step 12');
+    expect(run.textContent).toContain('Upcoming · Step 13');
     expect(within(panel).getByRole<HTMLButtonElement>("button", { name: "Save as queued runs" }).disabled).toBe(true); // show the plan first
     await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
     await user.click(await within(panel).findByRole('button', { name: 'Save as queued runs' }));
@@ -830,5 +831,137 @@ describe('agent work on a task', () => {
     await user.click(within(runs).getByRole('button', { name: 'Record Planner / architect run as completed' }));
     expect(await within(panel).findByText('Completed')).toBeTruthy();
     expect(within(panel).queryByRole('button', { name: 'Record Planner / architect run as completed' })).toBeNull();
+  });
+});
+
+describe('integrations and AI help', () => {
+  let providers: FakeProviders;
+  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    providers = attachProviders(fake, seed);
+    attachPlanning(fake);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Integrations/ }));
+    await screen.findByRole('heading', { name: 'Integrations' });
+    return user;
+  };
+
+  it('shows each tool as detected, with a message that says what to do, and never a made-up quota', async () => {
+    await openIntegrations();
+    const ollama = await screen.findByRole('region', { name: 'Ollama (local)' });
+    expect(within(ollama).getByText('Working')).toBeTruthy();
+    expect(within(ollama).getByText('On this PC')).toBeTruthy();
+    const claude = screen.getByRole('region', { name: 'Claude Code' });
+    expect(within(claude).getByText('Installed')).toBeTruthy();
+    expect(within(claude).getByText(/follow the sign-in/)).toBeTruthy();
+    expect(within(claude).getByText(/your text is sent there/)).toBeTruthy();
+    const codex = screen.getByRole('region', { name: 'Codex CLI' });
+    expect(within(codex).getByText('Not installed')).toBeTruthy();
+    expect(within(codex).getByText(/It is optional/)).toBeTruthy();
+    for (const card of [ollama, claude, codex]) expect(within(card).getByText('Unavailable from this provider')).toBeTruthy();
+  });
+
+  it('checks again on request and shows the new answer', async () => {
+    const user = await openIntegrations();
+    providers.providers = providers.providers.map((p) => (p.id === 'ollama' ? { ...p, status: 'installed', message: 'Ollama is installed but not running.', hint: 'Start Ollama from the Start menu, then press Check again.' } : p));
+    await user.click(await screen.findByRole('button', { name: 'Check Ollama (local) again' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:check')?.input).toEqual({ provider: 'ollama' });
+    expect(await within(screen.getByRole('region', { name: 'Ollama (local)' })).findByText('Ollama is installed but not running.')).toBeTruthy();
+  });
+
+  it('lists Ollama models with their size and the context length the model states, loads one on request, and tests one with a prompt', async () => {
+    const user = await openIntegrations({ models: [sampleModel('llama3.2:1b'), sampleModel('mystery:7b', { sizeBytes: null, contextLength: null, family: null, parameterSize: null, quantization: null })] });
+    const table = await screen.findByRole('table', { name: 'Ollama models' });
+    expect(within(table).getByText('1.2 GB')).toBeTruthy();
+    expect(within(table).getByText('up to 131,072')).toBeTruthy();
+    expect(within(table).getByText('not stated')).toBeTruthy(); // never assumed from the name
+    await user.click(within(table).getByRole('button', { name: 'Load llama3.2:1b into memory' }));
+    expect(providers.warmed).toEqual(['llama3.2:1b']);
+    expect(await screen.findByText('llama3.2:1b is loaded.')).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText('Test a model'), 'llama3.2:1b');
+    await user.click(screen.getByRole('button', { name: 'Send a test prompt' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:generate')?.input).toEqual({ choice: { provider: 'ollama', model: 'llama3.2:1b' }, prompt: 'Reply with the single word OK.', purpose: 'connection-test' });
+    expect(await screen.findByText(/answered in 0\.8 s: OK/)).toBeTruthy();
+  });
+
+  it('downloads a model only through the confirmation in main, says the size is not known in advance, and shows progress', async () => {
+    const user = await openIntegrations();
+    expect(await screen.findByText(/does not say how big a model is before it starts/)).toBeTruthy();
+    await user.type(screen.getByLabelText('Download a model'), 'llama3.2:3b');
+    await user.click(screen.getByRole('button', { name: 'Download…' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:pull')?.input).toEqual({ model: 'llama3.2:3b' });
+    await vi.waitFor(() => expect(providers.pulled).toEqual(['llama3.2:3b']));
+    expect(await screen.findByText('llama3.2:3b was downloaded.')).toBeTruthy();
+  });
+
+  it('says what is wrong when Ollama is not running instead of listing models', async () => {
+    await openIntegrations({ providers: [sampleProvider('ollama', { status: 'installed', message: 'Ollama is installed but not running.', hint: 'Start Ollama from the Start menu, then press Check again.' }), sampleProvider('claude-code'), sampleProvider('codex')] });
+    const ollama = await screen.findByRole('region', { name: 'Ollama (local)' });
+    expect(within(ollama).getByText('Ollama is installed but not running.')).toBeTruthy();
+    expect(within(ollama).queryByRole('table', { name: 'Ollama models' })).toBeNull();
+    expect(within(ollama).queryByLabelText('Download a model')).toBeNull();
+  });
+
+  it('suggests steps for a feature with a provider you choose, puts them in the form for review, and creates nothing', async () => {
+    const user = await openIntegrations();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Tasks and Roadmap/ }));
+    await user.click(await screen.findByRole('button', { name: 'Break a feature down…' }));
+    const form = await screen.findByRole('region', { name: 'Break a feature down' });
+    const suggest = within(form).getByRole('button', { name: 'Suggest steps' });
+    expect((suggest as HTMLButtonElement).disabled).toBe(true); // nothing is chosen for you
+    await user.click(within(form).getByText('Suggest steps with AI (optional)'));
+    await user.type(within(form).getByLabelText('Feature'), 'Crouching');
+    await user.selectOptions(await within(form).findByLabelText('Provider'), 'ollama');
+    expect(within(form).getByText(/the text stays here/)).toBeTruthy();
+    await user.selectOptions(await within(form).findByLabelText('Model'), 'llama3.2:1b');
+    await user.click(within(form).getByRole('button', { name: 'Suggest steps' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:suggestSteps')?.input).toEqual({ projectId: 'project-1', choice: { provider: 'ollama', model: 'llama3.2:1b' }, title: 'Crouching', description: '' });
+    expect(await within(form).findByText(/2 steps suggested\. Review and edit them below; no task has been created\./)).toBeTruthy();
+    expect(within(form).getByLabelText<HTMLTextAreaElement>(/^Steps/).value).toBe('Add the crouch input :: C toggles crouch\nLower the camera');
+    expect(fake.calls.some((c) => c.channel === 'tasks:breakdown')).toBe(false);
+  });
+
+  it('tells a cloud choice apart, and reports a declined confirmation as nothing sent', async () => {
+    const user = await openIntegrations({ suggestion: { sent: false, steps: [], provider: 'claude-code', model: '' } });
+    await user.click(within(sidebar()).getByRole('button', { name: /^Tasks and Roadmap/ }));
+    await user.click(await screen.findByRole('button', { name: 'Break a feature down…' }));
+    const form = await screen.findByRole('region', { name: 'Break a feature down' });
+    await user.click(within(form).getByText('Suggest steps with AI (optional)'));
+    await user.type(within(form).getByLabelText('Feature'), 'Crouching');
+    await user.selectOptions(await within(form).findByLabelText('Provider'), 'claude-code');
+    expect(within(form).getByText(/Sends your text to Anthropic\. You confirm each time/)).toBeTruthy();
+    await user.click(within(form).getByRole('button', { name: 'Suggest steps' }));
+    expect(await within(form).findByText('Nothing was sent.')).toBeTruthy();
+    expect(within(form).getByLabelText<HTMLTextAreaElement>(/^Steps/).value).toBe('');
+  });
+
+  it('drafts a document into the editor without saving it, and can bring your own text back', async () => {
+    const user = await openIntegrations();
+    attachPlanning(fake);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Project Context/ }));
+    await user.click((await screen.findAllByRole('button', { name: 'Create Decisions' }))[0] as HTMLElement);
+    const editor = await screen.findByRole('region', { name: 'Editing Decisions' });
+    const box = within(editor).getByLabelText<HTMLTextAreaElement>('Document text');
+    await user.clear(box);
+    await user.type(box, 'my own notes');
+    await user.click(within(editor).getByText('Draft with AI (optional)'));
+    await user.selectOptions(within(editor).getByLabelText('Provider'), 'ollama');
+    await user.selectOptions(await within(editor).findByLabelText('Model'), 'llama3.2:1b');
+    await user.click(within(editor).getByRole('button', { name: 'Draft' }));
+    expect(fake.calls.find((c) => c.channel === 'providers:draftDocument')?.input).toMatchObject({ projectId: 'project-1', docType: 'DECISIONS', currentText: 'my own notes', choice: { provider: 'ollama', model: 'llama3.2:1b' } });
+    expect(await within(editor).findByText(/The draft is in the box/)).toBeTruthy();
+    expect(box.value).toContain('TODO: confirm the engine version');
+    expect(fake.calls.some((c) => c.channel === 'memory:save')).toBe(false); // nothing saved by drafting
+    await user.click(within(editor).getByRole('button', { name: 'Restore my text' }));
+    expect(box.value).toBe('my own notes');
+  });
+
+  it('the dashboard shows whether each provider is reachable', async () => {
+    const user = await openIntegrations();
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const card = await screen.findByRole('region', { name: 'Provider connectivity' });
+    expect(await within(card).findByText(/Ollama \(local\)/)).toBeTruthy();
+    expect(within(card).getByText(/Working 1\.0\.0/)).toBeTruthy();
+    expect(within(card).getByText(/Not installed/)).toBeTruthy();
   });
 });

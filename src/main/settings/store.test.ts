@@ -32,6 +32,10 @@ describe('settings schema', () => {
       'backup.intervalHours': 24,
       'backup.keepCount': 10,
       'context.defaultBudget': 8000,
+      'providers.ollamaEndpoint': 'http://127.0.0.1:11434',
+      'providers.ollamaAllowRemote': false,
+      'providers.timeoutSeconds': 300,
+      'providers.ollamaContextLength': 0,
       'tasks.requirePlanApproval': false,
       'tasks.view': 'board',
     });

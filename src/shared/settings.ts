@@ -16,6 +16,13 @@ export const SettingsSchema = z.object({
   /** Audit limits (spec §7): the scanner stops at either and the report says so. */
   'audit.maxFiles': z.number().int().min(1000).max(200_000).default(20_000),
   'audit.timeBudgetSeconds': z.number().int().min(1).max(120).default(8),
+  /** AI providers (spec §9). The Ollama address is loopback unless remote use is allowed on purpose. */
+  'providers.ollamaEndpoint': z.string().min(1).max(200).default('http://127.0.0.1:11434'),
+  'providers.ollamaAllowRemote': z.boolean().default(false),
+  /** Longest wait for a provider answer, in seconds. */
+  'providers.timeoutSeconds': z.number().int().min(10).max(3600).default(300),
+  /** Context length asked of Ollama for each request; 0 keeps each model's own default. */
+  'providers.ollamaContextLength': z.number().int().min(0).max(1_048_576).default(0),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
   'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
   /** Tasks (spec §10): ask for an approved plan before a task moves to In progress, and which view the Tasks page opens in. */

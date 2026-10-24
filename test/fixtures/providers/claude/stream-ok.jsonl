@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"s1","model":"claude-test","tools":["Read"],"permissionMode":"plan"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Here is "}]},"session_id":"s1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"the answer."}]},"session_id":"s1"}
+{"type":"result","subtype":"success","is_error":false,"result":"Here is the answer.","session_id":"s1","total_cost_usd":0.0123,"usage":{"input_tokens":120,"output_tokens":45}}

@@ -122,13 +122,17 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { patterns: [testBan] }] },
   },
   // Main-process rules (ARCHITECTURE.md section 4): other modules import only a module's index.ts, only process/ spawns,
-  // only storage/ touches node:sqlite, and nothing in main uses the global fetch until providers/ollama/ exists.
+  // only storage/ touches node:sqlite, and only the Ollama adapter uses the global fetch.
   {
     files: ['src/main/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: mainBans() }],
       'no-restricted-globals': ['error', 'fetch'],
     },
+  },
+  {
+    files: ['src/main/providers/ollama.ts'],
+    rules: { 'no-restricted-globals': 'off' },
   },
   {
     files: ['src/main/process/**/*.ts'],

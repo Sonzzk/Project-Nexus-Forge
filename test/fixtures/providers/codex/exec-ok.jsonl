@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"t1"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"thinking"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Step one. Step two."}}
+{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}

@@ -42,13 +42,13 @@ export interface FakeApi {
   /** What the native folder picker returns next: a project to add, or null for cancel. */
   nextPick: Project | null;
   /** Delivers an event to subscribers, as main would. */
-  emit(event: EventName, payload: ActivityEvent): void;
+  emit(event: EventName, payload: unknown): void;
 }
 
 export function createFakeApi(
   initial: { settings?: Partial<Settings>; events?: ActivityEvent[]; projects?: Project[] } = {},
 ): FakeApi {
-  const listeners = new Map<string, Set<(payload: ActivityEvent) => void>>();
+  const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const fake: FakeApi = {
     calls: [],
     settings: { ...SettingsSchema.parse({}), ...initial.settings },
@@ -235,7 +235,7 @@ export function createFakeApi(
     });
   }) as Api['invoke'];
 
-  const on = ((event: string, listener: (payload: ActivityEvent) => void) => {
+  const on = ((event: string, listener: (payload: unknown) => void) => {
     const set = listeners.get(event) ?? new Set();
     set.add(listener);
     listeners.set(event, set);

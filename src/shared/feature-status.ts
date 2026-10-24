@@ -50,13 +50,13 @@ export const FEATURES: readonly FeatureStatus[] = [
   // Sidebar, in the order of spec §5.
   nav('dashboard', 'Dashboard', 'available', 5),
   nav('projects', 'Projects', 'available', 6),
-  nav('workbench', 'AI Workbench', 'upcoming', 12),
+  nav('workbench', 'AI Workbench', 'upcoming', 13),
   nav('tasks', 'Tasks and Roadmap', 'available', 10, 'Board, list and milestone roadmap; running agents on tasks arrives in Steps 11 to 13.'),
   nav('context', 'Project Context', 'available', 9, 'Project memory, context packs and session handoffs.'),
   nav('git', 'Git and Changes', 'available', 7, 'Read-only status and recent commits; diff review and revert arrive in Step 16.'),
   nav('testing', 'Testing', 'upcoming', 23),
   nav('assets', 'Assets', 'upcoming', 22),
-  nav('integrations', 'Integrations', 'upcoming', 12),
+  nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now; usage tracking arrives in Step 14.'),
   nav(
     'activity',
     'Activity and Logs',
@@ -120,7 +120,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     label: 'Run an agent',
     section: 'workbench',
     state: 'upcoming',
-    step: 12,
+    step: 13,
   },
 
   // Dashboard cards (spec §5 and §20). Later steps flip these to available as they land.
@@ -133,6 +133,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     step: 5,
   },
   { id: 'card.projects', kind: 'card', label: 'Projects', section: 'projects', state: 'available', step: 6 },
+  { id: 'card.providers', kind: 'card', label: 'Provider connectivity', section: 'integrations', state: 'available', step: 12 },
   { id: 'card.portfolio', kind: 'card', label: 'Portfolio', section: 'tasks', state: 'available', step: 10 },
   {
     id: 'card.current-task',
@@ -148,7 +149,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     label: 'Active agent sessions',
     section: 'workbench',
     state: 'upcoming',
-    step: 12,
+    step: 17,
   },
   { id: 'card.git', kind: 'card', label: 'Recent changes', section: 'git', state: 'available', step: 7 },
   { id: 'card.tests', kind: 'card', label: 'Test status', section: 'testing', state: 'upcoming', step: 23 },

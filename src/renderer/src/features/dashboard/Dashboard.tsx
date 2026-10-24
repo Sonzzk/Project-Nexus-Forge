@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Handoff } from '@shared/context';
+import { STATUS_TEXT } from '@shared/providers';
 import { STATUS_LABELS } from '@shared/tasks';
 import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
@@ -217,6 +218,31 @@ function CurrentTaskCard() {
   );
 }
 
+function ProvidersCard() {
+  const { go } = useNav();
+  const providers = useJson('all', () => window.api.invoke('providers:list', {}));
+  return (
+    <section className="card" aria-label="Provider connectivity" data-feature="card.providers">
+      <div className="card__head">
+        <h2>Provider connectivity</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      <ul className="rows" aria-label="Providers at a glance">
+        {providers?.map((p) => (
+          <li key={p.id} className="row row--card">
+            <span className="dot" data-severity={p.status === 'working' || p.status === 'installed' ? 'info' : 'warning'} />
+            <span className="row__summary">
+              <strong>{p.label}</strong> <span className="muted">· {STATUS_TEXT[p.status]}{p.version === null ? '' : ` ${p.version}`}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function NextActionCard() {
   const { selected } = useProjects();
   const { go } = useNav();
@@ -316,6 +342,7 @@ export function Dashboard() {
         <HandoffCard />
         <CurrentTaskCard />
         <NextActionCard />
+        <ProvidersCard />
         <PortfolioCard />
         {CARDS.filter((feature) => feature.state !== 'available').map((feature) => (
           <UpcomingCard key={feature.id} feature={feature} />

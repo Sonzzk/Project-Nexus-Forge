@@ -214,7 +214,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
   fake.handlers['agents:prompt'] = (input) => {
     const { taskId, role } = input as { taskId: string; role: AgentRoleId };
     const r = roleById(role) ?? fail('INVALID_INPUT', 'That role does not exist.');
-    return { role: r.id, writeCapable: r.writeCapable, prompt: renderPrompt(r, find(taskId), 'Alpha'), note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Steps 12 and 13.' };
+    return { role: r.id, writeCapable: r.writeCapable, prompt: renderPrompt(r, find(taskId), 'Alpha'), note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Step 13.' };
   };
   fake.handlers['agents:record'] = (input) => {
     const { runId, outcome } = input as { runId: string; outcome: RunState };
