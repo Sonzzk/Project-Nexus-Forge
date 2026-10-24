@@ -65,7 +65,7 @@ interface DetectionRow {
 }
 
 /** Windows paths are case-insensitive: one key per folder, whatever the spelling. */
-const keyOf = (path: string): string => path.replace(/[\\/]+$/, '').toLowerCase();
+export const keyOf = (path: string): string => path.replace(/[\\/]+$/, '').toLowerCase();
 
 const parseJson = <T>(text: string, fallback: T): T => {
   try {

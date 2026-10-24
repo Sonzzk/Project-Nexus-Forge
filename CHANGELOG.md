@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 8 · Persistent storage (2026-10-24, tag `step-08`)
+
+### Added
+- Data and backups in Settings: back up now, optional scheduled backups with a retention cap, restore (asks first, saves the current data first, restarts with the chosen backup), export to a versioned JSON file, import with a preview and conflict choice.
+- A recovery dialog at start-up for a damaged or newer database (restore the newest usable backup, open the backups folder, start a new database, quit); nothing is ever deleted.
+- A table-registration hook so later tables join export and import; `docs/DATA.md` (schema, backups, export format) and `docs/RECOVERY.md`.
+- Settings `backup.scheduleEnabled`, `backup.intervalHours`, `backup.keepCount`; channels `storage:*`. Decision D-033.
+
 ## Step 7 · Project auditing (2026-10-24, tag `step-07`)
 
 ### Added

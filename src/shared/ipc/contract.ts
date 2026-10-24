@@ -3,6 +3,14 @@ import { ActivityEventSchema } from '../activity';
 import { AuditReportSchema, AuditSummarySchema, GitSummarySchema } from '../audit';
 import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
+import {
+  BackupItemSchema,
+  ExportResultSchema,
+  IMPORT_CONFLICT_MODES,
+  ImportPreviewSchema,
+  ImportResultSchema,
+  StorageStatusSchema,
+} from '../storage';
 import type { ChannelName } from './channels';
 
 // One request schema and one response schema per channel. Main parses every request before a handler runs and every
@@ -75,6 +83,20 @@ export const contract = {
     response: z.strictObject({ revealed: z.literal(true) }),
   },
   'git:summary': { request: z.strictObject({ projectId: z.string().max(64) }), response: GitSummarySchema },
+  // Data and backups. Backups are named by file name; export, import and restore choose files in native dialogs in main,
+  // and anything that overwrites data or adds a project folder is confirmed there too.
+  'storage:status': { request: noInput, response: StorageStatusSchema },
+  'storage:backupNow': { request: noInput, response: BackupItemSchema },
+  'storage:restore': {
+    request: z.strictObject({ backupId: z.string().min(1).max(200) }),
+    response: z.strictObject({ staged: z.boolean() }),
+  },
+  'storage:exportData': { request: noInput, response: ExportResultSchema },
+  'storage:previewImport': { request: noInput, response: ImportPreviewSchema },
+  'storage:applyImport': {
+    request: z.strictObject({ conflict: z.enum(IMPORT_CONFLICT_MODES) }),
+    response: ImportResultSchema,
+  },
 } satisfies Record<ChannelName, { request: z.ZodType; response: z.ZodType }>;
 
 /** What the renderer sends. */

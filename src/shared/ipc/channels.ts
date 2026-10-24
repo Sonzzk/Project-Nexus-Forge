@@ -18,6 +18,12 @@ export const CHANNELS = [
   'audit:get',
   'audit:reveal',
   'git:summary',
+  'storage:status',
+  'storage:backupNow',
+  'storage:restore',
+  'storage:exportData',
+  'storage:previewImport',
+  'storage:applyImport',
 ] as const;
 
 export const EVENTS = ['activity:appended'] as const;

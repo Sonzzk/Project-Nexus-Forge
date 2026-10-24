@@ -69,7 +69,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     'Settings',
     'available',
     5,
-    'Density and log level now; the full settings arrive in Step 24.',
+    'Density, log level, and data and backups now; the full settings arrive in Step 24.',
   ),
   nav('status', 'Implementation Status', 'available', 5),
 

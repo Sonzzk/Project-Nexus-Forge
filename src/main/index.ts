@@ -5,18 +5,27 @@ import type { AppInfo } from '@shared/ipc/contract';
 import { installCrashHandlers } from './app/crash';
 import { isAllowedUrl } from './app/navigation';
 import { registerAppScheme, rendererRootFor, serveRenderer } from './app/protocol';
+import { isRecoverable, runStartupRecovery } from './app/recovery';
 import { createShutdownCoordinator } from './app/shutdown';
 import { createMainWindow, installSecurityGuards, rendererDevServerUrl } from './app/window';
 import { createGitService } from './git';
 import { createEmitter, createIpc, registerHandlers } from './ipc';
-import { createActivityLog, type ActivityLog } from './logging';
+import { activityTable, createActivityLog, type ActivityLog } from './logging';
 import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
-import { createProjectRegistry } from './projects';
+import { createProjectRegistry, projectTables } from './projects';
 import { createAuditService } from './scanning';
-import { createSettingsStore, type SettingsStore } from './settings';
-import { openAppDatabase } from './storage';
+import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
+import {
+  applyPendingRestore,
+  createBackupScheduler,
+  createStorageService,
+  createTransfer,
+  loadMigrations,
+  openAppDatabase,
+  type StorageUi,
+} from './storage';
 
 // Composition root: the only place that decides which implementation is used (ARCHITECTURE.md section 4).
 
@@ -61,11 +70,22 @@ app.on('before-quit', (event) => {
 });
 shutdown.register('logger', 80, () => logger.flush());
 
+// A test run can stop the app from starting itself again after a restore; a packaged app never reads this.
+const skipRelaunch = !app.isPackaged && process.env['GDCC_TEST_NO_RELAUNCH'] === '1';
+const relaunch = (): void => {
+  if (!skipRelaunch) app.relaunch();
+  app.quit();
+};
+const knownSchemaVersion = loadMigrations().length;
+
 async function startServices(): Promise<void> {
+  // A restore chosen in the last session is carried out now, before anything opens the database.
+  const restored = applyPendingRestore({ userDataDir, knownSchemaVersion, logger: logger.child('restore') });
   const database = await openAppDatabase({
     userDataDir,
     appVersion: app.getVersion(),
     logger: logger.child('storage'),
+    keepBackups: () => settings?.get('backup.keepCount') ?? 10,
   });
   const { db } = database;
   shutdown.register('database', 90, () => db.close());
@@ -127,6 +147,59 @@ async function startServices(): Promise<void> {
         : await dialog.showOpenDialog(window, options);
     return result.canceled ? undefined : result.filePaths[0];
   };
+  const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
+  for (const table of [settingsTable, ...projectTables, activityTable]) transfer.register(table);
+  const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const ui: StorageUi = {
+    confirm: async (options) => {
+      const box = { type: 'warning' as const, buttons: [options.confirmLabel, 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, title: options.title, message: options.message, ...(options.detail === undefined ? {} : { detail: options.detail }) };
+      const window = parent();
+      const result = window === undefined ? await dialog.showMessageBox(box) : await dialog.showMessageBox(window, box);
+      return result.response === 0;
+    },
+    chooseExportFile: async (defaultName) => {
+      const box = { title: 'Export app data', defaultPath: join(app.getPath('documents'), defaultName), filters: [{ name: 'JSON', extensions: ['json'] }] };
+      const window = parent();
+      const result = window === undefined ? await dialog.showSaveDialog(box) : await dialog.showSaveDialog(window, box);
+      return result.canceled ? undefined : result.filePath;
+    },
+    chooseImportFile: async () => {
+      const box = { title: 'Choose an export to import', properties: ['openFile' as const], filters: [{ name: 'JSON', extensions: ['json'] }] };
+      const window = parent();
+      const result = window === undefined ? await dialog.showOpenDialog(box) : await dialog.showOpenDialog(window, box);
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    relaunch,
+  };
+  const storage = createStorageService({
+    db,
+    userDataDir,
+    backups: database.backups,
+    transfer,
+    activity,
+    logger: logger.child('data'),
+    ui,
+    schemaVersion: () => database.migrator.current(),
+    reloadSettings: () => settingsStore.reload(),
+  });
+  const scheduler = createBackupScheduler({
+    backups: database.backups,
+    enabled: () => settingsStore.get('backup.scheduleEnabled'),
+    intervalHours: () => settingsStore.get('backup.intervalHours'),
+    logger: logger.child('backup'),
+    onCreated: (info) =>
+      void activity?.record({ kind: 'backup.created', severity: 'info', summary: 'Made a scheduled backup of the app data.', details: { sizeBytes: info.sizeBytes } }),
+    onFailed: () => void activity?.record({ kind: 'backup.failed', severity: 'warning', summary: 'A scheduled backup could not be made. It will be tried again.' }),
+  });
+  scheduler.start();
+  shutdown.register('backup-scheduler', 20, () => scheduler.stop());
+  if (restored !== undefined)
+    activity.record(
+      'restoredFrom' in restored
+        ? { kind: 'storage.restored', severity: 'warning', summary: `Restored the app data from ${restored.restoredFrom}. The previous data file was kept as ${restored.replacedFile ?? 'a renamed file'}.` }
+        : { kind: 'storage.restore-failed', severity: 'error', summary: `A chosen restore was not applied: ${restored.failed}. The app data was left as it was.` },
+    );
+
   const git = createGitService({ runner, logger: logger.child('git') });
   const audits = createAuditService({
     db,
@@ -146,6 +219,7 @@ async function startServices(): Promise<void> {
     activity,
     projects,
     audits,
+    storage,
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,
@@ -203,6 +277,35 @@ if (!app.requestSingleInstanceLock()) {
       serveRenderer(rendererRootFor(__dirname));
       await startServices();
     } catch (error) {
+      // A damaged or newer database gets a choice of safe ways out; any other failure ends in the error box.
+      if (isRecoverable(error)) {
+        const restarting = await runStartupRecovery(error, {
+          userDataDir,
+          knownSchemaVersion,
+          logFile: redactor.redact(logFile),
+          logger: logger.child('recovery'),
+          showBox: async (box) =>
+            (
+              await dialog.showMessageBox({
+                type: 'error',
+                title: box.title,
+                message: box.message,
+                detail: box.detail,
+                buttons: box.buttons,
+                defaultId: 0,
+                cancelId: box.buttons.length - 1,
+                noLink: true,
+              })
+            ).response,
+          openFolder: (path) => void shell.openPath(path),
+          relaunch,
+        });
+        if (!restarting) {
+          quitting = true;
+          app.exit(1);
+        }
+        return;
+      }
       failStartup(error);
       return;
     }

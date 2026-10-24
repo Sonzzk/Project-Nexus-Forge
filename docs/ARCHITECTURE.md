@@ -913,3 +913,17 @@ Step 4 built the foundations in the section 3 layout and section 5 shapes. Where
 - **IPC.** `audit:run`, `audit:latest`, `audit:list`, `audit:get`, `audit:reveal` (project id plus a project-relative path; main resolves it inside the project and shows it in Explorer) and `git:summary`. No request carries a folder.
 - **UI.** An audit panel on the Projects page (run, run again, earlier audits, expandable sections, Confirmed and Inferred marks, evidence paths that reveal the file in Explorer), the Git and Changes page and the dashboard Recent changes card (both read-only).
 - **Tests.** Path policy, reader, scanner (budgets, sensitive files, links, heavy folders), every analyzer on the fixtures `audit-godot` and `audit-node`, the audit service (storage, retention, cascade, conflict, no file changes), the Git service against a real repository and the parser, the channels, component tests and `test/e2e/audit.e2e.ts`.
+
+## 21. What Step 8 did (2026-10-24)
+
+The schema, backup, restore, export and import details are in [DATA.md](DATA.md); the user-facing steps are in [RECOVERY.md](RECOVERY.md). In the code:
+
+- **Backups** (`src/main/storage/backups.ts`, `scheduler.ts`): reasons `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`; retention is the newest `backup.keepCount` of each reason (the setting is read at each backup); the scheduler checks every ten minutes while the app runs and makes a `scheduled` backup when the newest one is older than `backup.intervalHours`.
+- **Restore** (`restore.ts`): `inspectBackup`, `resolveBackup` (a file name from the backups folder, never a path), `stageRestore` / `applyPendingRestore` (the swap happens at the next start, before the database opens), `replaceDatabase` and `setAsideDatabase` (rename, never delete), `newestUsableBackup`.
+- **Startup recovery** (`src/main/app/recovery.ts`): a native dialog for `DB_CORRUPT` and `DB_NEWER_THAN_APP` with restore, open folder, new database and quit (D-033). `src/main/index.ts` wires it and the pending restore.
+- **Export and import** (`transfer.ts`): a registry of `ExportableTable`s, strict row validation, preview classification (new, same, different, blocked), skip or replace, one transaction. Tables registered today are defined beside their owners: `src/main/settings/export.ts`, `src/main/projects/export.ts`, `src/main/logging/export.ts`. `SettingsStore.reload()` re-reads settings after an import.
+- **Service and IPC** (`service.ts`; channels `storage:status`, `storage:backupNow`, `storage:restore`, `storage:exportData`, `storage:previewImport`, `storage:applyImport`): every file choice and every confirmation happens in a native dialog opened by main (`StorageUi`). A request carries a backup file name or a conflict choice, never a path.
+- **UI:** the Data and backups section of the Settings page (schedule, back up now, restore, export, import with preview).
+- **Settings added:** `backup.scheduleEnabled` (off), `backup.intervalHours` (24), `backup.keepCount` (10).
+- **Test hook:** `GDCC_TEST_NO_RELAUNCH=1` (ignored by a packaged app) makes a restore quit instead of starting a second instance, so the end-to-end test can restart the app itself.
+- **Tests:** restore and recovery (stage, apply, failed apply keeps the original, hostile marker, side files, set-aside), the scheduler and retention, round trip, conflicts, blocked rows, 14 hostile-import cases, rollback, the service with fake dialogs, the channels, component tests, and `test/e2e/storage.e2e.ts` (restore through a restart, export then import, hostile file).

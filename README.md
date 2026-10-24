@@ -52,6 +52,7 @@ App data lives outside the repository in `%APPDATA%\GameDevCommandCenter` (datab
 The app is built in 29 steps, one at a time, each tagged `step-NN` in Git.
 
 - [Master specification](docs/MASTER_SPEC.md): the source of truth
+- [App data, backups and export format](docs/DATA.md) and the [recovery guide](docs/RECOVERY.md)
 - [Architecture](docs/ARCHITECTURE.md): modules, interfaces, security model, data model, testing strategy and pinned dependencies
 - [Roadmap](docs/ROADMAP.md): the 29 steps, their dependencies and acceptance criteria
 - [Requirements trace](docs/REQUIREMENTS.md): which step owns each requirement

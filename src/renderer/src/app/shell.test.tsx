@@ -388,3 +388,80 @@ describe('audit and Git', () => {
     expect(within(await screen.findByRole('region', { name: 'Recent changes' })).getByText(/Select a project/)).toBeTruthy();
   });
 });
+
+describe('data and backups', () => {
+  const openSettings = async () => {
+    const user = await setup();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Settings/ }));
+    return { user, section: await screen.findByRole('region', { name: 'Data and backups' }) };
+  };
+
+  it('says there are no backups, makes one on request and lists it, and saves the schedule settings', async () => {
+    const { user, section } = await openSettings();
+    expect(await within(section).findByText('No backups yet.')).toBeTruthy();
+    await user.click(within(section).getByRole('button', { name: 'Back up now' }));
+    const list = await within(section).findByRole('list', { name: 'Backups' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('Manual')).toBeTruthy();
+
+    await user.click(within(section).getByLabelText('Back up automatically'));
+    expect(savedSettings()).toContainEqual({ key: 'backup.scheduleEnabled', value: true });
+    await user.selectOptions(within(section).getByLabelText('every'), '72');
+    expect(savedSettings()).toContainEqual({ key: 'backup.intervalHours', value: 72 });
+  });
+
+  it('restore sends only the backup file name; main does the confirming and the restart', async () => {
+    const { user, section } = await openSettings();
+    fake.backups = [{ id: 'gdcc-20261024T010000000Z-scheduled.db', createdAt: '2026-10-24T01:00:00.000Z', reason: 'scheduled', sizeBytes: 5000 }];
+    await user.click(within(section).getByRole('button', { name: 'Back up now' }));
+    const restoreButtons = await within(section).findAllByRole('button', { name: /^Restore the backup from/ });
+    await user.click(restoreButtons[restoreButtons.length - 1] as HTMLElement);
+    expect(fake.calls.find((c) => c.channel === 'storage:restore')?.input).toEqual({ backupId: 'gdcc-20261024T010000000Z-scheduled.db' });
+    expect(await within(section).findByText(/the app is restarting/)).toBeTruthy();
+  });
+
+  it('shows what an import would do before anything changes, defaults to keeping existing data, and sends only the choice', async () => {
+    const { user, section } = await openSettings();
+    fake.importPreview = {
+      staged: true,
+      fileName: 'gdcc-export.json',
+      exportedAt: '2026-10-24T01:00:00.000Z',
+      appVersion: '0.1.0',
+      tables: [{ id: 'projects', label: 'Projects', total: 3, added: 1, same: 1, conflicts: 1, blocked: 0 }],
+      projectFolders: ['D:\\Games\\New'],
+      warnings: [],
+    };
+    await user.click(within(section).getByRole('button', { name: 'Choose a file to import…' }));
+    const preview = await within(section).findByRole('region', { name: 'Import preview' });
+    expect(within(preview).getByText('gdcc-export.json')).toBeTruthy();
+    expect(within(preview).getByText('D:\\Games\\New')).toBeTruthy();
+    expect(within(preview).getByLabelText<HTMLInputElement>(/Keep what I have/).checked).toBe(true);
+    expect(fake.calls.some((c) => c.channel === 'storage:applyImport')).toBe(false);
+
+    await user.click(within(preview).getByLabelText(/Replace with the file/));
+    await user.click(within(preview).getByRole('button', { name: 'Import' }));
+    expect(fake.calls.find((c) => c.channel === 'storage:applyImport')?.input).toEqual({ conflict: 'replace' });
+  });
+
+  it('does not show an import preview when the file dialog was cancelled, and reports a declined import', async () => {
+    const { user, section } = await openSettings();
+    await user.click(within(section).getByRole('button', { name: 'Choose a file to import…' }));
+    await vi.waitFor(() => expect(fake.calls.some((c) => c.channel === 'storage:previewImport')).toBe(true));
+    expect(within(section).queryByRole('region', { name: 'Import preview' })).toBeNull();
+
+    fake.importPreview = { staged: true, fileName: 'x.json', tables: [], projectFolders: [], warnings: [] };
+    fake.importResult = { applied: false, tables: [] };
+    await user.click(within(section).getByRole('button', { name: 'Choose a file to import…' }));
+    await user.click(await within(section).findByRole('button', { name: 'Import' }));
+    expect(await within(section).findByText('Nothing was imported.')).toBeTruthy();
+  });
+
+  it('reports an export, or its cancellation', async () => {
+    const { user, section } = await openSettings();
+    await user.click(within(section).getByRole('button', { name: 'Export data…' }));
+    expect(await within(section).findByText('Saved 2 rows.')).toBeTruthy();
+    fake.exportResult = { saved: false, tables: [] };
+    await user.click(within(section).getByRole('button', { name: 'Export data…' }));
+    expect(await within(section).findByText('Export cancelled.')).toBeTruthy();
+  });
+});

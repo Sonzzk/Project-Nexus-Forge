@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { IpcResult } from '@shared/errors';
 import { openMigratedDb } from '../../../test/helpers/db';
@@ -13,15 +14,22 @@ import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
 import { createAuditService } from '../scanning';
+import { createStorageService, createTransfer, type StorageUi } from '../storage';
+import { createBackupService } from '../storage/backups';
+import { projectTables } from '../projects';
+import { settingsTable } from '../settings/export';
+import { activityTable } from '../logging/export';
 import { createGitService } from '../git';
 
 afterEach(removeTempDirs);
 
 let pickedFolder: string | undefined;
 let revealed: string[] = [];
+const uiCalls: string[] = [];
+let uiAnswer = true;
 
 async function setup() {
-  const { db } = await openMigratedDb();
+  const { db, dir } = await openMigratedDb();
   const logger = memoryLogger();
   const activity = createActivityLog({ db, redactor: createRedactor(), logger });
   const settings = createSettingsStore({ db, logger, activity });
@@ -37,12 +45,33 @@ async function setup() {
   const git = createGitService({ runner: { start: () => { throw new Error('no process'); } } as never, logger, locate: () => undefined });
   const audits = createAuditService({ db, projects, git, activity, logger, redactor, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
   revealed = [];
+  uiCalls.length = 0;
+  const transfer = createTransfer({ db, appVersion: 'test', schemaVersion: () => 3 });
+  for (const table of [settingsTable, ...projectTables, activityTable]) transfer.register(table);
+  const ui: StorageUi = {
+    confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
+    chooseExportFile: () => (uiCalls.push('save'), Promise.resolve(undefined)),
+    chooseImportFile: () => (uiCalls.push('open'), Promise.resolve(undefined)),
+    relaunch: () => void uiCalls.push('relaunch'),
+  };
+  const storage = createStorageService({
+    db,
+    userDataDir: dir,
+    backups: createBackupService({ db, dir: join(dir, 'backups'), logger }),
+    transfer,
+    activity,
+    logger,
+    ui,
+    schemaVersion: () => 3,
+    reloadSettings: () => settings.reload(),
+  });
   registerHandlers(ipc, {
     logger,
     settings,
     activity,
     projects,
     audits,
+    storage,
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -199,6 +228,39 @@ describe('audit channels', () => {
     expect(await call('audit:reveal', { projectId: id, relativePath: 'missing.txt' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
     expect(await call('audit:reveal', { projectId: id, relativePath: 'x', absolute: root })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(revealed).toHaveLength(1);
+  });
+});
+
+describe('storage channels', () => {
+  it('backs up now, lists the backup by file name, and restores only after the native confirmation', async () => {
+    const { call } = await setup();
+    const made = (await call('storage:backupNow')) as { ok: true; value: { id: string; reason: string } };
+    expect(made).toMatchObject({ ok: true, value: { reason: 'manual', id: expect.stringMatching(/^gdcc-.*-manual\.db$/) as unknown } });
+    expect(await call('storage:status')).toMatchObject({ ok: true, value: { schemaVersion: 3, backups: [{ id: made.value.id }] } });
+
+    uiAnswer = false;
+    expect(await call('storage:restore', { backupId: made.value.id })).toEqual({ ok: true, value: { staged: false } });
+    expect(uiCalls).toEqual(['confirm']);
+    uiAnswer = true;
+    expect(await call('storage:restore', { backupId: made.value.id })).toEqual({ ok: true, value: { staged: true } });
+    expect(uiCalls).toEqual(['confirm', 'confirm', 'relaunch']);
+  });
+
+  it('never accepts a path, and names that are not backups are refused before anything is asked', async () => {
+    const { call } = await setup();
+    for (const backupId of ['C:\\Windows\\win.ini', '..\\data\\gdcc.db', 'gdcc.db'])
+      expect(await call('storage:restore', { backupId })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('storage:restore', { backupId: 'x', path: 'C:\\x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('storage:applyImport', { conflict: 'delete-everything' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(uiCalls).toEqual([]);
+  });
+
+  it('export and import ask main to open the native dialogs; a cancelled dialog changes nothing', async () => {
+    const { call } = await setup();
+    expect(await call('storage:exportData')).toMatchObject({ ok: true, value: { saved: false } });
+    expect(await call('storage:previewImport')).toMatchObject({ ok: true, value: { staged: false, tables: [] } });
+    expect(await call('storage:applyImport', { conflict: 'skip' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(uiCalls).toEqual(['save', 'open']);
   });
 });
 

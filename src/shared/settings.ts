@@ -16,6 +16,11 @@ export const SettingsSchema = z.object({
   /** Audit limits (spec §7): the scanner stops at either and the report says so. */
   'audit.maxFiles': z.number().int().min(1000).max(200_000).default(20_000),
   'audit.timeBudgetSeconds': z.number().int().min(1).max(120).default(8),
+  /** Backups of the app database (spec §22). Project content is never backed up. */
+  'backup.scheduleEnabled': z.boolean().default(false),
+  'backup.intervalHours': z.number().int().min(1).max(720).default(24),
+  /** How many backups to keep for each reason (manual, scheduled, before migration, before restore, before import). */
+  'backup.keepCount': z.number().int().min(1).max(100).default(10),
   /** Panel sizes in percent, by panel id (react-resizable-panels). */
   'ui.layout': z.record(z.string().max(40), z.number().min(0).max(100)).default({}),
 });

@@ -35,7 +35,7 @@ The installed Claude Code is 2.1.197 (Step 1 check). The current headless docs d
 
 The Step 3 window has Electron's default menu (File, Edit, View, Window). In a development run it also offers developer tools; packaged builds have developer tools off (`devTools: !app.isPackaged`). Step 5 kept the menu for development and removes it in a packaged build (`Menu.setApplicationMenu(null)`); that branch is untested until Step 27 packages the app.
 
-## KI-010 · A damaged or newer database ends in an error box, not a recovery screen (found in Step 4, open until Step 8)
+## KI-010 · A damaged or newer database: recovery dialog, no read-only mode (found in Step 4, Step 8 resolved the recovery part)
 
 If `gdcc.db` fails its integrity check, is not a SQLite file, or was made by a newer version of the app, startup shows a native error box (what happened, what to do, the data and log folders) and exits. The file is never changed, moved or deleted, and the unit tests cover both cases. There is no in-app choice yet to restore a backup or start a new database, and no read-only mode for a newer database: Step 8 builds both (spec §22). The end-to-end suite does not start the app against a bad file, because the native error box blocks the main process; the unit tests (`db.test.ts`, `migrator.test.ts`) cover it.
 
@@ -46,3 +46,5 @@ If `gdcc.db` fails its integrity check, is not a SQLite file, or was made by a n
 ## KI-012 · The audit is a heuristic reader, not a compiler (found in Step 7, accepted)
 
 Languages, entry points, file relationships and commands come from names, extensions and small text files, so dynamic imports, generated code, Unreal Blueprints and binary `.uasset` and `.unity` contents are not understood; those findings are Inferred or only counted. The scan stops at 20,000 files, depth 12 or 8 seconds by default and says so in the report; a very large Unreal project will usually hit a limit (the Binaries, Intermediate, Saved and DerivedDataCache folders are skipped first). The audit was proven on fixtures; the user's real Backrooms project was not audited (its folder is not registered).
+
+Update (Step 8): a damaged or newer database now opens a native recovery dialog (restore the newest usable backup, open the backups folder, start a new database with the old file renamed, or quit); see docs/RECOVERY.md and D-033. The logic is unit tested (`recovery.test.ts`, `restore.test.ts`); the dialog itself cannot be driven by the end-to-end suite because it blocks the main process. A newer database is not opened read-only (D-033).

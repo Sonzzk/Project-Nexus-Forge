@@ -7,3 +7,4 @@ export {
   type LoggerOptions,
 } from './logger';
 export { createRedactor, type Redactor } from './redactor';
+export { activityTable } from './export';

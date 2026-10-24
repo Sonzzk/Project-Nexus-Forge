@@ -12,6 +12,8 @@ export interface SettingsStore {
   /** Validates `value` against the key's schema; throws INVALID_INPUT when it does not fit. */
   set(key: SettingKey, value: unknown): void;
   all(): Settings;
+  /** Reads every value from the database again (after an import replaced rows behind the store's back). */
+  reload(): void;
   onChange(listener: (key: SettingKey) => void): () => void;
 }
 
@@ -38,35 +40,40 @@ export function createSettingsStore(options: SettingsStoreOptions): SettingsStor
   };
 
   // Load: an unreadable or invalid stored value falls back to the default. The bad row is kept until the user sets the key again.
-  for (const row of db.all<Row>('SELECT key, value_json FROM settings')) {
-    const key = SETTING_KEYS.find((k) => k === row.key);
-    if (key === undefined) continue; // written by a newer version of the app; keep it and ignore it
-    let parsed: { success: true; data: unknown } | { success: false } = { success: false };
-    try {
-      // Not safeParse(undefined): a default would make unreadable JSON look valid.
-      parsed = SettingsSchema.shape[key].safeParse(JSON.parse(row.value_json));
-    } catch {
-      // Unreadable JSON is invalid, same as a wrong value.
+  const load = (): void => {
+    Object.assign(values, SettingsSchema.parse({}));
+    for (const row of db.all<Row>('SELECT key, value_json FROM settings')) {
+      const key = SETTING_KEYS.find((k) => k === row.key);
+      if (key === undefined) continue; // written by a newer version of the app; keep it and ignore it
+      let parsed: { success: true; data: unknown } | { success: false } = { success: false };
+      try {
+        // Not safeParse(undefined): a default would make unreadable JSON look valid.
+        parsed = SettingsSchema.shape[key].safeParse(JSON.parse(row.value_json));
+      } catch {
+        // Unreadable JSON is invalid, same as a wrong value.
+      }
+      if (parsed.success) {
+        assign(key, parsed.data as never);
+      } else {
+        logger.warn('stored setting is invalid; using the default', {
+          key,
+          stored: row.value_json.slice(0, 200),
+        });
+        activity?.record({
+          kind: 'settings.invalid',
+          severity: 'warning',
+          summary: `The saved value for "${key}" was not valid, so the default is used.`,
+          details: { key },
+        });
+      }
     }
-    if (parsed.success) {
-      assign(key, parsed.data as never);
-    } else {
-      logger.warn('stored setting is invalid; using the default', {
-        key,
-        stored: row.value_json.slice(0, 200),
-      });
-      activity?.record({
-        kind: 'settings.invalid',
-        severity: 'warning',
-        summary: `The saved value for "${key}" was not valid, so the default is used.`,
-        details: { key },
-      });
-    }
-  }
+  };
+  load();
 
   return {
     get: (key) => values[key],
     all: () => ({ ...values }),
+    reload: load,
     set(key, value) {
       const parsed = SettingsSchema.shape[key].safeParse(value);
       if (!parsed.success)

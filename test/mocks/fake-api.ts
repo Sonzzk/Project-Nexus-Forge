@@ -3,6 +3,7 @@ import type { Api } from '../../src/shared/api';
 import type { IpcResult } from '../../src/shared/errors';
 import type { AuditReport, GitSummary } from '../../src/shared/audit';
 import type { Project } from '../../src/shared/projects';
+import type { BackupItem, ExportResult, ImportPreview, ImportResult } from '../../src/shared/storage';
 import type { EventName } from '../../src/shared/ipc/channels';
 import { SETTING_KEYS, SettingsSchema, type Settings } from '../../src/shared/settings';
 
@@ -22,6 +23,11 @@ export interface FakeApi {
   git: GitSummary;
   /** Project-relative paths the page asked to reveal. */
   revealed: string[];
+  /** Data and backups: what `storage:status` lists, and what the dialogs in main would answer. */
+  backups: BackupItem[];
+  exportResult: ExportResult;
+  importPreview: ImportPreview;
+  importResult: ImportResult;
   /** What the native folder picker returns next: a project to add, or null for cancel. */
   nextPick: Project | null;
   /** Delivers an event to subscribers, as main would. */
@@ -42,6 +48,10 @@ export function createFakeApi(
     nextReport: sampleReport(1),
     git: { available: true, isRepository: false, message: 'Not a Git repository.' },
     revealed: [],
+    backups: [],
+    exportResult: { saved: true, tables: [{ id: 'projects', label: 'Projects', rows: 2 }] },
+    importPreview: { staged: false, tables: [], projectFolders: [], warnings: [] },
+    importResult: { applied: true, tables: [] },
     emit: (event, payload) => listeners.get(event)?.forEach((listener) => listener(payload)),
     api: undefined as unknown as Api,
   };
@@ -126,6 +136,17 @@ export function createFakeApi(
       fake.projects = fake.projects.filter((p) => p.id !== (input as { id: string }).id);
       return Promise.resolve({ ok: true, value: { removed: true } });
     }
+    if (channel === 'storage:status')
+      return Promise.resolve({ ok: true, value: { schemaVersion: 3, databaseBytes: 204800, backups: fake.backups, lastScheduledAt: null } });
+    if (channel === 'storage:backupNow') {
+      const made: BackupItem = { id: `gdcc-20261024T0${fake.backups.length}0000000Z-manual.db`, createdAt: '2026-10-24T03:00:00.000Z', reason: 'manual', sizeBytes: 90000 };
+      fake.backups = [made, ...fake.backups];
+      return Promise.resolve({ ok: true, value: made });
+    }
+    if (channel === 'storage:restore') return Promise.resolve({ ok: true, value: { staged: true } });
+    if (channel === 'storage:exportData') return Promise.resolve({ ok: true, value: fake.exportResult });
+    if (channel === 'storage:previewImport') return Promise.resolve({ ok: true, value: fake.importPreview });
+    if (channel === 'storage:applyImport') return Promise.resolve({ ok: true, value: fake.importResult });
     if (channel === 'audit:latest') return Promise.resolve({ ok: true, value: fake.report });
     if (channel === 'audit:list')
       return Promise.resolve({

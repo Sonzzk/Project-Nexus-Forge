@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 7 · Project auditing: done (2026-10-24, tag `step-07`)
-**Next step:** Step 8 · Persistent storage (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-8--persistent-storage).
+**Current step:** Step 8 · Persistent storage: done (2026-10-24, tag `step-08`)
+**Next step:** Step 9 · Context and session handoffs (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-9--context-and-session-handoffs).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -12,6 +12,7 @@
 
 - **Step 6.** Project registry: register folders through a native picker, read-only type detection with stored evidence and a manual override, the Projects page, a working project switcher (ARCHITECTURE.md section 19, D-031). Verified by all six gates and a snapshot test showing no project file changes.
 - **Step 7.** Read-only project audit (13 sections, every finding Confirmed with evidence or Inferred), bounded scanner, ProjectReader and path policy, read-only Git service, the audit panel, the Git and Changes page and the dashboard Recent changes card (ARCHITECTURE.md section 20, D-032). Verified by all six gates and a snapshot test showing no project file changes.
+- **Step 8.** Backups (manual, scheduled, retention), restore that saves the current data first and swaps at the next start, a recovery dialog for a damaged or newer database, versioned JSON export and import with preview, conflict choice and native confirmations, a table-registration hook, `docs/DATA.md` and `docs/RECOVERY.md` (ARCHITECTURE.md section 21, D-033). Verified by all six gates and an end-to-end restore through a real restart.
 
 ## In progress
 - Nothing.
@@ -21,10 +22,10 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 8: documented schema, manual and scheduled backups with retention, restore that backs up first, versioned JSON export and import with preview, the recovery screen for a damaged or newer database (KI-010).
+- Step 9: project memory (propose, edit, preview and confirm before any write into a project), context packs with a preview and staleness, and session handoffs.
 
 ## Application feature status
-The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
+The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -42,6 +43,15 @@ The app has a working shell, a project registry with detection and overrides, re
 | GPU | NVIDIA GeForce RTX 3060, 12288 MiB, driver 610.74 (`nvidia-smi` available) |
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
+
+## Handoff: Step 8
+- **Requested:** recoverable app data: documented schema, manual and scheduled backups with a retention cap, restore that first backs up the current database, export and import to versioned JSON with validation, preview and conflict handling, a startup integrity check with handling of a damaged or newer database, a recovery guide and a table-registration hook.
+- **Changed:** `src/main/storage/` (`restore.ts`, `transfer.ts`, `service.ts`, `scheduler.ts`; `backups.ts` and `index.ts` extended), `src/main/app/recovery.ts`, table definitions beside their owners (`settings/export.ts`, `projects/export.ts`, `logging/export.ts`), `SettingsStore.reload`, six `storage:*` channels, `src/shared/storage.ts`, three `backup.*` settings, the Data and backups section of Settings, startup wiring in `src/main/index.ts`, `docs/DATA.md`, `docs/RECOVERY.md`, ARCHITECTURE.md section 21, D-033, KI-010 update and CHANGELOG.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (408 of 408), `build`, `check:docs` and `test:e2e` (21 of 21, including a backup restored through a real app restart with the pre-restore copy kept, export then remove then import with the folder confirmed and untouched, and a hostile import file refused).
+- **Unfinished:** nothing in Step 8. The native recovery dialog (damaged or newer database at start-up) is covered by unit tests with fake dialogs but was not shown on screen, because it blocks the main process in an automated run. A newer database is not opened read-only (D-033).
+- **Known risks:** a restore needs a restart and, in a development run, `app.relaunch()` starts a plain Electron instance; the packaged app (Step 27) is the real target. Export files contain project folder names and notes.
+- **Relevant files:** `src/main/storage/restore.ts`, `src/main/storage/transfer.ts`, `src/main/storage/service.ts`, `src/main/app/recovery.ts`, `src/renderer/src/features/settings/DataSection.tsx`.
+- **Next task:** Step 9 · Context and session handoffs.
 
 ## Handoff: Step 7
 - **Requested:** a read-only, evidence-based audit report for a registered project: bounded scanner, analyzers, read-only Git through the process runner, and a report UI with Confirmed and Inferred findings, stored and re-runnable.

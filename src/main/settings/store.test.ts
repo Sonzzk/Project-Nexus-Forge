@@ -28,6 +28,9 @@ describe('settings schema', () => {
       'projects.selectedId': null,
       'audit.maxFiles': 20_000,
       'audit.timeBudgetSeconds': 8,
+      'backup.scheduleEnabled': false,
+      'backup.intervalHours': 24,
+      'backup.keepCount': 10,
     });
   });
 

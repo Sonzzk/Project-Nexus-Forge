@@ -6,6 +6,7 @@ import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
 import type { AuditService } from '../scanning';
+import type { StorageService } from '../storage';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
 import type { Ipc } from './handle';
@@ -17,6 +18,7 @@ export interface HandlerServices {
   activity: ActivityLog;
   projects: ProjectRegistry;
   audits: AuditService;
+  storage: StorageService;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -80,6 +82,13 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
     services.reveal(full);
     return { revealed: true };
   });
+
+  ipc.handle('storage:status', () => services.storage.status());
+  ipc.handle('storage:backupNow', () => services.storage.backupNow());
+  ipc.handle('storage:restore', ({ backupId }) => services.storage.restore(backupId));
+  ipc.handle('storage:exportData', () => services.storage.exportData());
+  ipc.handle('storage:previewImport', () => services.storage.previewImport());
+  ipc.handle('storage:applyImport', ({ conflict }) => services.storage.applyImport(conflict));
 
   ipc.handle('git:summary', async ({ projectId }) => {
     const project = projects.get(projectId);

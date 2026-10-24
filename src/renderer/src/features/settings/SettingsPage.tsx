@@ -1,5 +1,6 @@
 import { LOG_LEVELS } from '@shared/settings';
 import { useSettings } from '../../lib/settings';
+import { DataSection } from './DataSection';
 
 export function SettingsPage() {
   const { settings, set, error } = useSettings();
@@ -52,6 +53,7 @@ export function SettingsPage() {
           ))}
         </select>
       </div>
+      <DataSection />
     </div>
   );
 }

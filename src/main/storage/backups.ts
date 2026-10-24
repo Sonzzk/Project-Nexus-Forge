@@ -6,7 +6,7 @@ import { sealBackup } from './db';
 
 // Backups of the app database only (never project content). Step 8 adds restore, scheduling and the backups table.
 
-export type BackupReason = 'pre-migration' | 'manual' | 'scheduled' | 'pre-restore';
+export type BackupReason = 'pre-migration' | 'manual' | 'scheduled' | 'pre-restore' | 'pre-import';
 
 export interface BackupInfo {
   path: string;
@@ -28,23 +28,24 @@ export interface BackupServiceOptions {
   dir: string;
   logger: Logger;
   now?: () => Date;
-  /** How many pre-migration backups to keep (ARCHITECTURE.md section 8: the newest ten). */
-  keepPreMigration?: number;
+  /** How many backups to keep per reason, newest first (ARCHITECTURE.md section 8: ten; the `backup.keepCount` setting). */
+  keep?: number | (() => number);
 }
 
-const REASONS: readonly BackupReason[] = ['pre-migration', 'manual', 'scheduled', 'pre-restore'];
-const NAME = /^gdcc-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z(?:-\d+)?-([a-z-]+)\.db$/;
+const REASONS: readonly BackupReason[] = ['pre-migration', 'manual', 'scheduled', 'pre-restore', 'pre-import'];
+export const BACKUP_FILE_NAME = /^gdcc-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z(?:-\d+)?-([a-z-]+)\.db$/;
 
 export function createBackupService(options: BackupServiceOptions): BackupService {
   const { db, dir, logger } = options;
   const now = options.now ?? (() => new Date());
-  const keep = options.keepPreMigration ?? 10;
+  const keepOption = options.keep ?? 10;
+  const keep = (): number => Math.max(1, typeof keepOption === 'number' ? keepOption : keepOption());
 
   const list = (): BackupInfo[] => {
     if (!existsSync(dir)) return [];
     const found: BackupInfo[] = [];
     for (const name of readdirSync(dir)) {
-      const m = NAME.exec(name);
+      const m = BACKUP_FILE_NAME.exec(name);
       const reason = m?.[8] as BackupReason | undefined;
       if (m === null || reason === undefined || !REASONS.includes(reason)) continue;
       const path = join(dir, name);
@@ -58,12 +59,13 @@ export function createBackupService(options: BackupServiceOptions): BackupServic
     return found.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.path.localeCompare(a.path));
   };
 
-  const prune = (): void => {
+  /** Keeps the newest `keep` backups of the given reason; the others are removed (only files this service made). */
+  const prune = (reason: BackupReason): void => {
     for (const old of list()
-      .filter((b) => b.reason === 'pre-migration')
-      .slice(keep)) {
+      .filter((b) => b.reason === reason)
+      .slice(keep())) {
       rmSync(old.path, { force: true });
-      logger.info('old pre-migration backup removed', { file: old.path });
+      logger.info('old backup removed', { file: old.path, reason });
     }
   };
 
@@ -96,7 +98,7 @@ export function createBackupService(options: BackupServiceOptions): BackupServic
         sizeBytes: statSync(path).size,
       };
       logger.info('database backup created', { file: path, reason, sizeBytes: info.sizeBytes });
-      if (reason === 'pre-migration') prune();
+      prune(reason);
       return info;
     },
   };
