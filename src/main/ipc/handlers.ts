@@ -5,7 +5,7 @@ import type { GitService } from '../git';
 import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
-import type { PlanningService, TaskService } from '../planning';
+import type { AgentService, PlanningService, TaskService } from '../planning';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
 import { resolveInside } from '../security';
@@ -25,6 +25,7 @@ export interface HandlerServices {
   handoffs: HandoffService;
   tasks: TaskService;
   planning: PlanningService;
+  agents: AgentService;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -141,6 +142,13 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
     services.planning.removeRisk(id);
     return { removed: true };
   });
+
+  ipc.handle('agents:roles', () => services.agents.roles());
+  ipc.handle('agents:preview', (request) => services.agents.preview(request));
+  ipc.handle('agents:queue', (request) => services.agents.createWorkflow(request));
+  ipc.handle('agents:runs', ({ taskId }) => services.agents.runs(taskId));
+  ipc.handle('agents:prompt', ({ taskId, role }) => services.agents.prompt(taskId, role));
+  ipc.handle('agents:record', ({ runId, outcome, note }) => services.agents.recordOutcome(runId, outcome, note));
 
   ipc.handle('storage:status', () => services.storage.status());
   ipc.handle('storage:backupNow', () => services.storage.backupNow());

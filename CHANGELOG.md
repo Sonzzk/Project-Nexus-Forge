@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 11 · Agent roles and workflows (2026-10-24, tag `step-11`)
+
+### Added
+- The six agent roles of spec §11 with their purpose, expected output, permission (only the implementer can change files) and prompt template; a prompt preview that uses only the task's own fields.
+- Workflow templates (plan only; plan, approve, implement with an optional reviewer and an optional QA step; documentation; asset or level brief) shown with each step's action, provider and blocker before anything exists, and saved as queued run records. The visible run states (queued, planning, awaiting approval, running, awaiting review, testing, completed, failed, cancelled) with a tested state machine.
+- An Agent work section in the task detail; the Run button stays disabled and labeled Upcoming until Steps 12 and 13. This step starts no program and sends nothing.
+- Schema v6, six channels, export of runs and history. Decision D-036, known issue KI-015.
+
 ## Step 10 · Task management (2026-10-24, tag `step-10`)
 
 ### Added

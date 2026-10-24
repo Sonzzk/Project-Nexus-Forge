@@ -15,7 +15,7 @@ import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
-import { createPlanningService, createTaskService, planningTables } from './planning';
+import { agentTables, createAgentService, createPlanningService, createTaskService, planningTables } from './planning';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
 import {
@@ -149,7 +149,7 @@ async function startServices(): Promise<void> {
     return result.canceled ? undefined : result.filePaths[0];
   };
   const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
-  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, activityTable]) transfer.register(table);
+  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, ...agentTables, activityTable]) transfer.register(table);
   const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const ui: StorageUi = {
     confirm: async (options) => {
@@ -235,6 +235,7 @@ async function startServices(): Promise<void> {
   });
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
   const planning = createPlanningService({ db, projects, activity });
+  const agents = createAgentService({ db, projects, tasks, activity });
   registerHandlers(ipc, {
     logger,
     settings: settingsStore,
@@ -247,6 +248,7 @@ async function startServices(): Promise<void> {
     handoffs,
     tasks,
     planning,
+    agents,
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,

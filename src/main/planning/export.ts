@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AGENT_ROLE_IDS, RUN_STATES } from '@shared/agents';
 import { COMPLEXITIES, MILESTONE_STATUSES, PRIORITIES, RISK_KINDS, RISK_STATUSES, ROLES, SCOPE_TIERS, SEVERITIES, TASK_STATUSES, USAGE_CATEGORIES } from '@shared/tasks';
 import type { ExportableTable, Row } from '../storage';
 
@@ -156,5 +157,43 @@ export const planningTables: ExportableTable[] = [
     parents: [{ column: 'milestone_id', table: 'milestones', parentColumn: 'id' }],
     check: (row) => jsonObject('progress_json')(row) ?? jsonObject('by_status_json')(row),
     orderBy: 'taken_at, id',
+  },
+];
+
+export const agentTables: ExportableTable[] = [
+  {
+    id: 'agent_runs',
+    label: 'Agent runs',
+    schema: z.strictObject({
+      id,
+      project_id: id,
+      task_id: id.nullable(),
+      workflow_id: z.string().max(64).nullable(),
+      step_index: z.number().int().min(0).max(100),
+      role: z.enum(AGENT_ROLE_IDS),
+      provider_id: z.string().max(80),
+      state: z.enum(RUN_STATES),
+      write_capable: z.number().int().min(0).max(1),
+      optional: z.number().int().min(0).max(1),
+      note: z.string().max(1000),
+      created_at: isoText,
+      updated_at: isoText,
+    }),
+    key: ['id'],
+    parents: [
+      { column: 'project_id', table: 'projects', parentColumn: 'id' },
+      { column: 'task_id', table: 'tasks', parentColumn: 'id' },
+    ],
+    orderBy: 'created_at, step_index, id',
+    // Only the implementer writes: a file that says another role can write is not a record this app made.
+    check: (row) => (row['write_capable'] === 1 && row['role'] !== 'implementer' ? 'only the implementer role can write' : undefined),
+  },
+  {
+    id: 'agent_run_transitions',
+    label: 'Agent run history',
+    schema: z.strictObject({ id, run_id: id, from_state: z.string().max(30), to_state: z.enum(RUN_STATES), at: isoText, reason: z.string().max(1000) }),
+    key: ['id'],
+    parents: [{ column: 'run_id', table: 'agent_runs', parentColumn: 'id' }],
+    orderBy: 'at, id',
   },
 ];

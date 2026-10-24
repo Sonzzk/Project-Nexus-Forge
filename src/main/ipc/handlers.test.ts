@@ -13,7 +13,7 @@ import { createIpc, type InvokeEventLike } from './handle';
 import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
-import { createPlanningService, createTaskService } from '../planning';
+import { createAgentService, createPlanningService, createTaskService } from '../planning';
 import { createAuditService, createHandoffService, createMemoryService, createPackService } from '../scanning';
 import { createStorageService, createTransfer, loadMigrations, type StorageUi } from '../storage';
 import { createBackupService } from '../storage/backups';
@@ -60,6 +60,7 @@ async function setup() {
   const handoffs = createHandoffService({ db, projects, git, audits, activity });
   const tasks = createTaskService({ db, projects, activity, requirePlanApproval: () => false });
   const planning = createPlanningService({ db, projects, activity });
+  const agents = createAgentService({ db, projects, tasks, activity });
   const storage = createStorageService({
     db,
     userDataDir: dir,
@@ -83,6 +84,7 @@ async function setup() {
     handoffs,
     tasks,
     planning,
+    agents,
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -365,6 +367,40 @@ describe('task, milestone and register channels', () => {
     const made = (await call('tasks:breakdown', { projectId: id, title: 'Crouch', description: '', milestoneId: null, chain: true, steps: [{ title: 'Input', acceptance: ['C works'] }, { title: 'Camera', acceptance: [] }] })) as { ok: true; value: { title: string; dependsOn: string[]; id: string }[] };
     expect(made.value.map((t) => t.title)).toEqual(['Crouch', 'Input', 'Camera']);
     expect(made.value[2]?.dependsOn).toEqual([made.value[1]?.id]);
+  });
+});
+
+describe('agent channels', () => {
+  async function withTask() {
+    const env = await setup();
+    pickedFolder = copyFixture('audit-godot');
+    const added = (await env.call('projects:pickAndAdd')) as { ok: true; value: { project: { id: string } } };
+    const task = (await env.call('tasks:create', { projectId: added.value.project.id, title: 'Add jumping', provider: 'Claude Code' })) as { ok: true; value: { id: string } };
+    return { ...env, taskId: task.value.id };
+  }
+
+  it('lists the roles, previews a workflow, queues it, and records an outcome by hand', async () => {
+    const { call, taskId } = await withTask();
+    expect(await call('agents:roles')).toMatchObject({ ok: true, value: [{ id: 'planner', writeCapable: false }, { id: 'implementer', writeCapable: true }, { id: 'reviewer' }, { id: 'qa' }, { id: 'docs' }, { id: 'assets' }] });
+    const request = { taskId, workflow: 'implement', includeReviewer: false, includeQa: false };
+    expect(await call('agents:preview', request)).toMatchObject({ ok: true, value: { launchUnavailable: true, steps: [{ role: 'planner', provider: 'Claude Code' }, { kind: 'approval' }, { role: 'implementer', blockedBy: expect.stringContaining('approved plan') as unknown }, { role: 'reviewer', included: false }, { role: 'qa', included: false }] } });
+    const queued = (await call('agents:queue', request)) as { ok: true; value: { id: string; role: string; state: string }[] };
+    expect(queued.value.map((r) => [r.role, r.state])).toEqual([['planner', 'queued'], ['implementer', 'queued']]);
+    expect(await call('agents:queue', request)).toMatchObject({ ok: false, error: { code: 'CONFLICT' } });
+    expect(await call('agents:record', { runId: queued.value[0]?.id, outcome: 'completed', note: 'done by hand' })).toMatchObject({ ok: true, value: { state: 'completed' } });
+    expect(await call('agents:runs', { taskId })).toMatchObject({ ok: true, value: [{ state: 'completed' }, { state: 'queued' }] });
+  });
+
+  it('cannot be asked to start a run: there is no channel that moves a run to running, and bad input is refused', async () => {
+    const { call, taskId } = await withTask();
+    const queued = (await call('agents:queue', { taskId, workflow: 'plan', includeReviewer: false, includeQa: false })) as { ok: true; value: { id: string }[] };
+    const runId = queued.value[0]?.id;
+    expect(await call('agents:record', { runId, outcome: 'running', note: '' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('agents:record', { runId, outcome: 'planning', note: '' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('agents:preview', { taskId, workflow: 'implement', includeReviewer: false, includeQa: false, provider: 'x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('agents:preview', { taskId, workflow: 'run-everything', includeReviewer: true, includeQa: true })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('agents:prompt', { taskId, role: 'root' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('agents:prompt', { taskId, role: 'reviewer' })).toMatchObject({ ok: true, value: { writeCapable: false } });
   });
 });
 

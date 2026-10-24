@@ -210,3 +210,14 @@ Applied migrations are recorded in a `schema_migrations` table with checksums. B
 - **Imported dependencies are checked as a whole.** A per-row check cannot see a loop, so `ExportableTable.verify` runs after the rows are written, inside the transaction.
 - **The Backrooms profile is not here.** Subsystem, scope tiers and the register are generic (spec §19 "generic parts"); the Backrooms domains and risk presets arrive with Step 18.
 - **Release checklists are Step 23.** This step has milestone snapshots only.
+
+## D-036 · Step 11 agent role choices (Step 11, Accepted)
+
+- **Records now, execution later.** A workflow becomes queued run records that Steps 12 and 13 will drive. The renderer can only create those records and record how a run ended by hand (completed, failed, cancelled). The channel `agents:record` accepts only those three outcomes, so no page can mark a run as running, planning or testing, which would be a claim about work that did not happen.
+- **Permission is part of the record.** A run stores whether its role may write. Only the implementer can; the service refuses to move an implementer run to running without an approved plan, and export validation refuses a file that says otherwise.
+- **Optional steps are never added by themselves.** The reviewer and QA steps need an explicit switch for each. This is a rule of the preview and of the queueing code and is tested for every workflow.
+- **The approval is the task's plan approval.** The approval step is not a run; it is the `plan_approved_at` flag from Step 10, so one place says whether a plan is approved. Step 13's writer lock and queue build on it.
+- **One unfinished run per role and task.** A second planner run for the same task is refused until the first ended, so a double click cannot queue duplicate work. Step 13 adds the cross-task duplicate-launch rules.
+- **Provider text comes from the task.** The task's suggested provider is shown for every agent step. Real provider selection and per-role routing are Steps 12 and 13.
+- **Prompt templates are plain text.** They use only the task's title, description, acceptance criteria, files and test requirements, and the project name; they never contain file contents, so the preview cannot leak anything the person did not enter.
+- **Workflow and state names stay in English constants.** Their labels are shown in the UI; the stored values are stable identifiers.

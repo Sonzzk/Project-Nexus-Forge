@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 5)
+## Schema (version 6)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -37,6 +37,8 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `task_notes` | 5 | task (cascade), time, text | |
 | `risks` | 5 | project (cascade), kind (bug or risk), title, severity, status, optional task | The bugs and risks register. |
 | `milestone_snapshots` | 5 | milestone (cascade), time, label, progress and counts by status | |
+| `agent_runs` | 6 | project (cascade), task, workflow, step, role, provider text, state, write-capable, optional, note | A record of one role working on one task; nothing starts a program. |
+| `agent_run_transitions` | 6 | run (cascade), from and to state, time, reason | The state history. |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 
@@ -65,7 +67,7 @@ At start-up the database gets an integrity check. If it fails (`DB_CORRUPT`) or 
 
 Format `gdcc-export`, `formatVersion` 1: `{ format, formatVersion, appVersion, schemaVersion, exportedAt, tables: { <table id>: [ row, ... ] } }`. Rows are plain objects with one field per column.
 
-Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `milestones`, `tasks`, `task_dependencies`, `task_notes`, `risks`, `milestone_snapshots`, `activity_events`. Audits are left out because they can be run again.
+Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `milestones`, `tasks`, `task_dependencies`, `task_notes`, `risks`, `milestone_snapshots`, `agent_runs`, `agent_run_transitions`, `activity_events`. Audits are left out because they can be run again.
 
 Import rules:
 

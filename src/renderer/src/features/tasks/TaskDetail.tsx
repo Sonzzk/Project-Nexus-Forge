@@ -3,6 +3,7 @@ import { AlertDialog } from 'radix-ui';
 import { STATUS_LABELS, type Note, type Task } from '@shared/tasks';
 import { formatTime } from '../../lib/activity';
 import type { PlanningApi } from '../../lib/planning';
+import { AgentsPanel } from './AgentsPanel';
 import { draftOf, fieldsOf, TaskFieldsForm, type TaskDraft } from './TaskForms';
 
 /** One task: edit every field, move it along its lifecycle, approve its plan, set what it waits on, keep notes. */
@@ -130,6 +131,8 @@ export function TaskDetail({ task, planning, onGone }: { task: Task; planning: P
           Add note
         </button>
       </div>
+
+      <AgentsPanel task={task} />
 
       <div className="actions">
         <AlertDialog.Root>

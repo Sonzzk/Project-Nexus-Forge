@@ -767,3 +767,68 @@ describe('tasks and roadmap', () => {
     expect(within(portfolio).getByText(/paused/)).toBeTruthy();
   });
 });
+
+describe('agent work on a task', () => {
+  const openTask = async (overrides: Parameters<typeof sampleTask>[1] = {}) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    attachPlanning(fake, { tasks: [sampleTask(1, { title: 'Add jumping', status: 'ready', allowedNext: allowedNext('ready', null), acceptance: ['Jump is tunable'], ...overrides })] });
+    await user.click(within(sidebar()).getByRole('button', { name: /^Tasks and Roadmap/ }));
+    await user.click(await within(await screen.findByRole('region', { name: 'Ready' })).findByRole('button', { name: /Add jumping/ }));
+    return { user, panel: await screen.findByRole('region', { name: 'Agent work for this task' }) };
+  };
+
+  it('says what each role may do: planning is read-only, only the implementer changes files', async () => {
+    const { user, panel } = await openTask();
+    expect(await within(panel).findByText('Read-only')).toBeTruthy();
+    await user.selectOptions(within(panel).getByLabelText('Role'), 'implementer');
+    expect(within(panel).getByText('Can change project files')).toBeTruthy();
+    await user.selectOptions(within(panel).getByLabelText('Role'), 'reviewer');
+    expect(within(panel).getByText('Read-only')).toBeTruthy();
+  });
+
+  it('previews the exact prompt from the task and says nothing is sent', async () => {
+    const { user, panel } = await openTask();
+    await user.click(within(panel).getByRole('button', { name: 'Preview the prompt' }));
+    const preview = await within(panel).findByLabelText('Prompt preview');
+    expect(preview.textContent).toContain('Task: Add jumping');
+    expect(preview.textContent).toContain('- Jump is tunable');
+    expect(within(panel).getByText(/Nothing is sent/)).toBeTruthy();
+  });
+
+  it('shows the plan with the action and provider of each step, keeps reviewer and QA off until chosen, and flags the missing plan approval', async () => {
+    const { user, panel } = await openTask({ provider: 'Claude Code' });
+    await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
+    const steps = await within(panel).findByRole('list', { name: 'Workflow plan' });
+    expect(within(steps).getByText('Code reviewer').closest('li')?.textContent).toContain('Optional · off');
+    expect(within(steps).getByText('QA and debugging').closest('li')?.textContent).toContain('Optional · off');
+    const implementer = within(steps).getByText('Implementer').closest('li') as HTMLElement;
+    expect(implementer.textContent).toContain('Writes files');
+    expect(implementer.textContent).toContain('Provider: Claude Code');
+    expect(implementer.textContent).toContain('Blocked: Needs an approved plan');
+    expect(within(steps).getByText('Planner / architect').closest('li')?.textContent).toContain('Read-only');
+
+    await user.click(within(panel).getByLabelText('Also ask a reviewer'));
+    expect(within(panel).queryByRole('list', { name: 'Workflow plan' })).toBeNull(); // the old plan no longer matches the choice
+    await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
+    expect(within(await within(panel).findByRole('list', { name: 'Workflow plan' })).getByText('Code reviewer').closest('li')?.textContent).toContain('Optional · included');
+    expect(fake.calls.filter((c) => c.channel === 'agents:preview').at(-1)?.input).toEqual({ taskId: 'task-1', workflow: 'implement', includeReviewer: true, includeQa: false });
+  });
+
+  it('saves queued run records, lists them, lets you record an outcome by hand, and never offers to run them', async () => {
+    const { user, panel } = await openTask();
+    const run = within(panel).getByRole('button', { name: /^Run the workflow/ });
+    expect((run as HTMLButtonElement).disabled).toBe(true);
+    expect(run.textContent).toContain('Upcoming · Step 12');
+    expect(within(panel).getByRole<HTMLButtonElement>("button", { name: "Save as queued runs" }).disabled).toBe(true); // show the plan first
+    await user.click(within(panel).getByRole('button', { name: 'Show the plan' }));
+    await user.click(await within(panel).findByRole('button', { name: 'Save as queued runs' }));
+    const runs = await within(panel).findByRole('list', { name: 'Runs' });
+    expect(within(runs).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(runs).getAllByText('Queued')).toHaveLength(2);
+    expect(within(runs).queryByRole('button', { name: /start|launch|^run/i })).toBeNull();
+
+    await user.click(within(runs).getByRole('button', { name: 'Record Planner / architect run as completed' }));
+    expect(await within(panel).findByText('Completed')).toBeTruthy();
+    expect(within(panel).queryByRole('button', { name: 'Record Planner / architect run as completed' })).toBeNull();
+  });
+});

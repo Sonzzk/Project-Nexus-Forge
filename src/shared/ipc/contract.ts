@@ -13,6 +13,7 @@ import {
   PackRequestSchema,
   PackSummarySchema,
 } from '../context';
+import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
 import { AuditReportSchema, AuditSummarySchema, GitSummarySchema } from '../audit';
 import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
@@ -168,6 +169,17 @@ export const contract = {
   'risks:create': { request: RiskCreateSchema, response: RiskSchema },
   'risks:update': { request: RiskPatchSchema, response: RiskSchema },
   'risks:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.literal(true) }) },
+  // Agent roles and run records. Nothing here launches an agent: a workflow becomes queued records, and the person can record
+  // how a run ended. Launching arrives with Steps 12 and 13.
+  'agents:roles': { request: noInput, response: z.array(AgentRoleSchema) },
+  'agents:preview': { request: WorkflowRequestSchema, response: WorkflowPreviewSchema },
+  'agents:queue': { request: WorkflowRequestSchema, response: z.array(RunSchema) },
+  'agents:runs': { request: z.strictObject({ taskId: z.string().max(64) }), response: z.array(RunSchema) },
+  'agents:prompt': { request: z.strictObject({ taskId: z.string().max(64), role: z.enum(AGENT_ROLE_IDS) }), response: PromptPreviewSchema },
+  'agents:record': {
+    request: z.strictObject({ runId: z.string().max(64), outcome: z.enum(['completed', 'failed', 'cancelled']), note: z.string().max(500) }),
+    response: RunSchema,
+  },
   // Data and backups. Backups are named by file name; export, import and restore choose files in native dialogs in main,
   // and anything that overwrites data or adds a project folder is confirmed there too.
   'storage:status': { request: noInput, response: StorageStatusSchema },

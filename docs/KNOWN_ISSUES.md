@@ -56,3 +56,7 @@ Documentation folders must be inside the project; a folder elsewhere on disk is 
 ## KI-014 · Task planning limits (found in Step 10, accepted)
 
 The board has no drag and drop (buttons offer the valid moves). Milestones are an ordered list, not a calendar timeline; target dates are shown but nothing warns when one passes. The manual breakdown form creates the tasks you describe; AI-assisted breakdown arrives in Step 12. Suggested role and provider on a task are text for now; Steps 11 and 12 connect them to real roles and providers. Release checklists are Step 23, the Backrooms profile Step 18. The features were proven on fixture projects and the fake `window.api`; the user's real projects were not used.
+
+## KI-015 · Agent roles are records until Steps 12 and 13 (found in Step 11, accepted)
+
+No agent can be started yet: the Run buttons are disabled and labeled `Upcoming · Step 12`. Run states other than queued, completed, failed and cancelled can only be set by the runner that arrives in Steps 12 and 13, so a stored run will normally sit in queued until someone records an outcome by hand. The prompt templates are first drafts; Step 12 checks them against real provider behavior. Providers are free text on the task until Step 12.

@@ -1,3 +1,4 @@
+import { AGENT_ROLES, RUN_TRANSITIONS, renderPrompt, roleById, workflowById, type AgentRoleId, type AgentRun, type RunState, type WorkflowPreview } from '../../src/shared/agents';
 import { allowedNext, progressOf, type Milestone, type Note, type PortfolioEntry, type Recommendations, type Risk, type Snapshot, type Task, type TaskStatus } from '../../src/shared/tasks';
 import type { FakeApi } from './fake-api';
 
@@ -41,6 +42,7 @@ export interface FakePlanning {
   risks: Risk[];
   notes: Note[];
   snapshots: Snapshot[];
+  runs: AgentRun[];
   recommendation: Recommendations;
 }
 
@@ -51,6 +53,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
     risks: [],
     notes: [],
     snapshots: [],
+    runs: [],
     recommendation: { items: [], message: 'There are no tasks yet. Add one, or break a feature down into tasks.' },
     ...seed,
   };
@@ -166,6 +169,57 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
   fake.handlers['risks:remove'] = (input) => {
     state.risks = state.risks.filter((r) => r.id !== (input as { id: string }).id);
     return { removed: true };
+  };
+  fake.handlers['agents:roles'] = () => AGENT_ROLES.map((r) => ({ id: r.id, label: r.label, purpose: r.purpose, expectedOutput: r.expectedOutput, writeCapable: r.writeCapable }));
+  const previewOf = (input: unknown): WorkflowPreview => {
+    const { taskId, workflow, includeReviewer, includeQa } = input as { taskId: string; workflow: string; includeReviewer: boolean; includeQa: boolean };
+    const task = find(taskId);
+    const template = workflowById(workflow) ?? fail('INVALID_INPUT', 'That workflow does not exist.');
+    return {
+      workflow: template.id,
+      label: template.label,
+      description: template.description,
+      launchUnavailable: true,
+      steps: template.steps.map((step) => {
+        const role = step.role === undefined ? undefined : roleById(step.role);
+        return {
+          kind: step.kind,
+          ...(step.role === undefined ? {} : { role: step.role, roleLabel: role?.label ?? step.role }),
+          optional: step.optional,
+          included: !step.optional || (step.role === 'reviewer' && includeReviewer) || (step.role === 'qa' && includeQa),
+          writeCapable: role?.writeCapable === true,
+          action: step.action,
+          provider: step.kind === 'agent' ? task.provider : '',
+          usage: step.kind === 'agent' ? task.usage : '',
+          blockedBy: role?.writeCapable === true && task.planApprovedAt === null ? 'Needs an approved plan. Approve the plan on the task first.' : '',
+        };
+      }),
+    };
+  };
+  fake.handlers['agents:preview'] = previewOf;
+  fake.handlers['agents:queue'] = (input) => {
+    const plan = previewOf(input);
+    const { taskId } = input as { taskId: string };
+    const task = find(taskId);
+    const made = plan.steps
+      .filter((s) => s.kind === 'agent' && s.included)
+      .map((s, i): AgentRun => ({
+        id: `run-${++counter}`, projectId: task.projectId, taskId, workflowId: 'wf-1', stepIndex: i, role: s.role as AgentRoleId, providerId: s.provider, state: 'queued',
+        writeCapable: s.writeCapable, optional: s.optional, note: '', allowedNext: [...RUN_TRANSITIONS.queued], createdAt: '2026-10-24T05:00:00.000Z', updatedAt: '2026-10-24T05:00:00.000Z',
+      }));
+    state.runs = [...state.runs, ...made];
+    return made;
+  };
+  fake.handlers['agents:runs'] = (input) => state.runs.filter((r) => r.taskId === (input as { taskId: string }).taskId);
+  fake.handlers['agents:prompt'] = (input) => {
+    const { taskId, role } = input as { taskId: string; role: AgentRoleId };
+    const r = roleById(role) ?? fail('INVALID_INPUT', 'That role does not exist.');
+    return { role: r.id, writeCapable: r.writeCapable, prompt: renderPrompt(r, find(taskId), 'Alpha'), note: 'This is the text a provider would receive for this task. Nothing is sent: running agents arrives in Steps 12 and 13.' };
+  };
+  fake.handlers['agents:record'] = (input) => {
+    const { runId, outcome } = input as { runId: string; outcome: RunState };
+    state.runs = state.runs.map((r) => (r.id === runId ? { ...r, state: outcome, allowedNext: [], note: 'Recorded by hand' } : r));
+    return state.runs.find((r) => r.id === runId);
   };
   refresh();
   return state;
