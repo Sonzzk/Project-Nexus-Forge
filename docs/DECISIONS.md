@@ -57,10 +57,11 @@ Step 1 produces documents, so its automated test is `scripts/check-docs.mjs` (No
 
 Electron 45.0.0 (stable 2026-10-20, Chromium 156, Node 24.22.0) is the newest stable major and has the longest support window (to 2027-04-27, tentative); Electron supports only the latest three majors. Every package is pinned to an exact version in `package.json`, listed with license, source and verification date in ARCHITECTURE.md section 1, and the docs check fails when the two disagree. Alternative: Electron 44.9.3, more mature but out of support on 2027-03-02, before the planned release steps. Sources: https://releases.electronjs.org/schedule and releases.json, checked 2026-10-24.
 
-## D-012 · Node.js 24 LTS for development (Step 2, Proposed: install awaiting the user's approval)
+## D-012 · Node.js 24 LTS for development (Step 2, Accepted; installed 2026-10-24 with the user's approval)
 
 The PC has Node.js 20.18.1, end of life since 2026-04-30 and below Vite's minimum (KI-001). Recommended: **Node.js 24.22.1 LTS**, the same major as Electron 45's Node, supported to 2028-04-30, inside every tool's engine range (Vitest needs ^22.12, ^24 or >=26; jsdom needs ^24.15; `node:sqlite` is a release candidate from 24.15.0). Install with `winget install OpenJS.NodeJS.LTS --version 24.22.1`, which runs the official `node-v24.22.1-x64.msi` from nodejs.org (winget's SHA-256 `3bda4baf…1b01` matches nodejs.org's SHASUMS256.txt). It replaces Node 20 machine-wide in `C:\Program Files\nodejs`.
 Alternatives: Node 22 (maintenance, end of life 2027-04-30, too short for this build); Node 26 (LTS from 2026-10-28, a different major from Electron's Node, and newer than some tools have been tested on); a version manager such as fnm, nvm-windows or Volta (lets other projects keep Node 20, but adds another machine-wide tool, and Node 20 gets no security fixes anyway). Sources: https://github.com/nodejs/Release schedule.json and https://nodejs.org/dist/index.json, checked 2026-10-24.
+Outcome: the user approved ("install it") on 2026-10-24. winget verified the installer hash and installed Node.js 24.22.1 over Node 20; `node -v` shows v24.22.1 and `node:sqlite` opens a database (SQLite 3.53.4). `npm -v` shows 10.9.9 because the user's global npm prefix `A:\npm-global` holds its own npm, which Node's `npm.cmd` prefers over the bundled npm 11.19.1. npm 10.9.9 supports Node 24 (it is the npm bundled with Node 22), so it was left alone; changing the global npm is the user's call.
 
 ## D-013 · electron-vite for development and builds (Step 2, Accepted)
 

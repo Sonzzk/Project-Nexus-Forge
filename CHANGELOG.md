@@ -22,6 +22,9 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 - `docs/ROADMAP.md`: Step 3 now writes the scaffold by hand from ARCHITECTURE.md and checks Node.js 24 first.
 - D-003 is accepted; KI-001 records the Node.js decision.
 
+### After the `step-02` tag
+- Installed Node.js 24.22.1 LTS on the PC with the user's approval (D-012 accepted, KI-001 fixed). The docs check and its 14 tests pass on it.
+
 ## Step 1 · Overall architecture and requirements (2026-10-24, tag `step-01`)
 
 ### Added
