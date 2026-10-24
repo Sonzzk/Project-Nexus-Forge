@@ -16,6 +16,8 @@ export const SettingsSchema = z.object({
   /** Audit limits (spec §7): the scanner stops at either and the report says so. */
   'audit.maxFiles': z.number().int().min(1000).max(200_000).default(20_000),
   'audit.timeBudgetSeconds': z.number().int().min(1).max(120).default(8),
+  /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
+  'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
   /** Backups of the app database (spec §22). Project content is never backed up. */
   'backup.scheduleEnabled': z.boolean().default(false),
   'backup.intervalHours': z.number().int().min(1).max(720).default(24),

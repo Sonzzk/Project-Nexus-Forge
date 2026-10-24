@@ -3,6 +3,7 @@ import type { Api } from '../../src/shared/api';
 import type { IpcResult } from '../../src/shared/errors';
 import type { AuditReport, GitSummary } from '../../src/shared/audit';
 import type { Project } from '../../src/shared/projects';
+import type { ContextPack, Handoff, HandoffFields, MemoryOverview, MemoryPreview, PackSummary } from '../../src/shared/context';
 import type { BackupItem, ExportResult, ImportPreview, ImportResult } from '../../src/shared/storage';
 import type { EventName } from '../../src/shared/ipc/channels';
 import { SETTING_KEYS, SettingsSchema, type Settings } from '../../src/shared/settings';
@@ -23,6 +24,14 @@ export interface FakeApi {
   git: GitSummary;
   /** Project-relative paths the page asked to reveal. */
   revealed: string[];
+  /** Project context: canned answers for the memory, pack and handoff channels. */
+  memoryOverview: MemoryOverview;
+  memoryContent: Record<string, string>;
+  memoryPreview: MemoryPreview;
+  packResult: ContextPack;
+  packList: PackSummary[];
+  handoffDraft: HandoffFields;
+  handoffs: Handoff[];
   /** Data and backups: what `storage:status` lists, and what the dialogs in main would answer. */
   backups: BackupItem[];
   exportResult: ExportResult;
@@ -49,6 +58,13 @@ export function createFakeApi(
     git: { available: true, isRepository: false, message: 'Not a Git repository.' },
     revealed: [],
     backups: [],
+    memoryOverview: sampleMemoryOverview(),
+    memoryContent: {},
+    memoryPreview: { type: 'DECISIONS', location: 'App database', isNew: true, unchanged: false, createsFolder: false, diff: [{ kind: 'add', text: '# Decisions' }], bytes: 12, previousBytes: 0 },
+    packResult: samplePack(),
+    packList: [],
+    handoffDraft: { requested: '', changed: 'Branch main. Uncommitted: 0 staged, 2 modified, 0 untracked.', verified: '', unfinished: 'TODO: add jump (scripts/player.gd:5)', risks: '', files: '', nextTask: '' },
+    handoffs: [],
     exportResult: { saved: true, tables: [{ id: 'projects', label: 'Projects', rows: 2 }] },
     importPreview: { staged: false, tables: [], projectFolders: [], warnings: [] },
     importResult: { applied: true, tables: [] },
@@ -136,6 +152,44 @@ export function createFakeApi(
       fake.projects = fake.projects.filter((p) => p.id !== (input as { id: string }).id);
       return Promise.resolve({ ok: true, value: { removed: true } });
     }
+    if (channel === 'memory:overview') return Promise.resolve({ ok: true, value: fake.memoryOverview });
+    if (channel === 'memory:read') {
+      const { docType } = input as { docType: string };
+      const content = fake.memoryContent[docType];
+      return Promise.resolve({ ok: true, value: { content: content ?? '', location: 'App database', exists: content !== undefined } });
+    }
+    if (channel === 'memory:preview') return Promise.resolve({ ok: true, value: fake.memoryPreview });
+    if (channel === 'memory:save') return Promise.resolve({ ok: true, value: { written: true, location: 'App database' } });
+    if (channel === 'memory:setStorage') {
+      const { storage, docsDir } = input as { storage: MemoryOverview['storage']; docsDir: string };
+      fake.memoryOverview = { ...fake.memoryOverview, storage, docsDir };
+      return Promise.resolve({ ok: true, value: fake.memoryOverview });
+    }
+    if (channel === 'packs:build') {
+      const { task, budget, destination } = input as { task: string; budget: number; destination: string };
+      fake.packResult = { ...fake.packResult, task, budget, destination, saved: false, id: '' };
+      return Promise.resolve({ ok: true, value: fake.packResult });
+    }
+    if (channel === 'packs:save') {
+      const { title } = input as { title: string };
+      fake.packResult = { ...fake.packResult, id: 'pack-1', title, saved: true };
+      fake.packList = [{ id: 'pack-1', title, destination: fake.packResult.destination, estimate: fake.packResult.estimate, files: fake.packResult.items.length, createdAt: fake.packResult.createdAt, stale: 0 }];
+      return Promise.resolve({ ok: true, value: fake.packResult });
+    }
+    if (channel === 'packs:list') return Promise.resolve({ ok: true, value: fake.packList });
+    if (channel === 'packs:get' || channel === 'packs:refresh') return Promise.resolve({ ok: true, value: fake.packResult });
+    if (channel === 'packs:remove') {
+      fake.packList = [];
+      return Promise.resolve({ ok: true, value: { removed: true } });
+    }
+    if (channel === 'handoffs:draft') return Promise.resolve({ ok: true, value: fake.handoffDraft });
+    if (channel === 'handoffs:save') {
+      const saved: Handoff = { ...(input as { fields: HandoffFields }).fields, id: `handoff-${fake.handoffs.length + 1}`, projectId: (input as { projectId: string }).projectId, createdAt: '2026-10-24T05:00:00.000Z' };
+      fake.handoffs = [saved, ...fake.handoffs];
+      return Promise.resolve({ ok: true, value: saved });
+    }
+    if (channel === 'handoffs:list') return Promise.resolve({ ok: true, value: fake.handoffs });
+    if (channel === 'handoffs:latest') return Promise.resolve({ ok: true, value: fake.handoffs[0] ?? null });
     if (channel === 'storage:status')
       return Promise.resolve({ ok: true, value: { schemaVersion: 3, databaseBytes: 204800, backups: fake.backups, lastScheduledAt: null } });
     if (channel === 'storage:backupNow') {
@@ -251,3 +305,41 @@ export const sampleReport = (n: number, overrides: Partial<AuditReport> = {}): A
   ],
   ...overrides,
 });
+
+export function sampleMemoryOverview(): MemoryOverview {
+  return {
+    storage: 'app',
+    docsDir: '',
+    docs: (['PROJECT_CONTEXT', 'GAME_DESIGN', 'ARCHITECTURE', 'ROADMAP', 'TASKS', 'DECISIONS', 'SESSION_HANDOFF', 'TEST_PLAN', 'ASSET_REGISTER', 'CHANGELOG'] as const).map((type) => ({
+      type,
+      location: 'App database',
+      exists: false,
+      bytes: 0,
+    })),
+    proposal: [
+      { type: 'PROJECT_CONTEXT', reason: 'The project has no documentation of this kind yet.' },
+      { type: 'DECISIONS', reason: 'The project has no documentation of this kind yet.' },
+    ],
+  };
+}
+
+export function samplePack(): ContextPack {
+  return {
+    id: '',
+    projectId: 'project-1',
+    title: 'Make the player faster',
+    task: 'Make the player faster',
+    budget: 8000,
+    estimate: 420,
+    destination: 'Not sent anywhere yet',
+    items: [
+      { path: 'scripts/player.gd', kind: 'file', reason: 'file name mentions "player"', bytes: 180, estimate: 60, mtimeMs: 1, sha256: 'a'.repeat(64) },
+      { path: 'scripts/util.gd', kind: 'file', reason: 'contains "speed"', bytes: 120, estimate: 40, mtimeMs: 1, sha256: 'b'.repeat(64) },
+    ],
+    excluded: [{ path: 'logo.png', reason: 'binary or unknown file type; never included' }],
+    text: '# Context pack\n\n## File: scripts/player.gd\n',
+    createdAt: '2026-10-24T04:00:00.000Z',
+    stale: [],
+    saved: false,
+  };
+}

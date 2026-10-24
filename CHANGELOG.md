@@ -7,6 +7,13 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 9 · Context and session handoffs (2026-10-24, tag `step-09`)
+
+### Added
+- Project Context page: project memory (the ten documents of spec §8, stored in the app by default or, only after a diff preview and a native confirmation, in the project folder or a documentation folder inside it), context packs (a task-focused selection with a reason for every file and every exclusion, a full preview, saved packs that say when they are out of date) and session handoffs (the seven fields, drafted from Git and the latest audit).
+- The dashboard Latest session handoff card; the Git and audit facts feed the handoff draft.
+- Schema v4 (`memory_settings`, `project_docs`, `context_packs`, `handoffs`), 15 channels, setting `context.defaultBudget`, export registration for all four tables. Decision D-034, known issue KI-013.
+
 ## Step 8 · Persistent storage (2026-10-24, tag `step-08`)
 
 ### Added

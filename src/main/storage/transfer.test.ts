@@ -14,6 +14,7 @@ import { createSettingsStore } from '../settings';
 import { settingsTable } from '../settings/export';
 import { createBackupService, type BackupService } from './backups';
 import type { Db } from './db';
+import { loadMigrations } from './migrations';
 import { createStorageService, type StorageUi } from './service';
 import { createTransfer, type ExportFile, type Transfer } from './transfer';
 
@@ -25,7 +26,7 @@ async function app() {
   const activity = createActivityLog({ db, redactor: createRedactor(), logger });
   const settings = createSettingsStore({ db, logger, activity });
   const projects = createProjectRegistry({ db, activity, logger });
-  const transfer = createTransfer({ db, appVersion: 'test', schemaVersion: () => 3 });
+  const transfer = createTransfer({ db, appVersion: 'test', schemaVersion: () => loadMigrations().length });
   for (const table of [settingsTable, ...projectTables, activityTable]) transfer.register(table);
   return { db, dir, logger, activity, settings, projects, transfer };
 }
@@ -215,7 +216,7 @@ describe('storage service: export, import and restore through the dialogs in mai
       activity: env.activity,
       logger: env.logger,
       ui: fullUi,
-      schemaVersion: () => 3,
+      schemaVersion: () => loadMigrations().length,
       reloadSettings: () => env.settings.reload(),
     });
     return { ...env, service, confirms, files, backups };
@@ -319,7 +320,7 @@ describe('storage service: export, import and restore through the dialogs in mai
     const env = await withService();
     await env.service.backupNow();
     const status = env.service.status();
-    expect(status).toMatchObject({ schemaVersion: 3, lastScheduledAt: null });
+    expect(status).toMatchObject({ schemaVersion: loadMigrations().length, lastScheduledAt: null });
     expect(status.databaseBytes).toBeGreaterThan(0);
     expect(status.backups).toHaveLength(1);
     expect(status.backups[0]?.id).toMatch(/^gdcc-.*-manual\.db$/);

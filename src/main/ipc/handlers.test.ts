@@ -13,8 +13,8 @@ import { createIpc, type InvokeEventLike } from './handle';
 import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
-import { createAuditService } from '../scanning';
-import { createStorageService, createTransfer, type StorageUi } from '../storage';
+import { createAuditService, createHandoffService, createMemoryService, createPackService } from '../scanning';
+import { createStorageService, createTransfer, loadMigrations, type StorageUi } from '../storage';
 import { createBackupService } from '../storage/backups';
 import { projectTables } from '../projects';
 import { settingsTable } from '../settings/export';
@@ -46,7 +46,7 @@ async function setup() {
   const audits = createAuditService({ db, projects, git, activity, logger, redactor, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
   revealed = [];
   uiCalls.length = 0;
-  const transfer = createTransfer({ db, appVersion: 'test', schemaVersion: () => 3 });
+  const transfer = createTransfer({ db, appVersion: 'test', schemaVersion: () => loadMigrations().length });
   for (const table of [settingsTable, ...projectTables, activityTable]) transfer.register(table);
   const ui: StorageUi = {
     confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
@@ -54,6 +54,9 @@ async function setup() {
     chooseImportFile: () => (uiCalls.push('open'), Promise.resolve(undefined)),
     relaunch: () => void uiCalls.push('relaunch'),
   };
+  const memory = createMemoryService({ db, projects, activity, confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)) });
+  const packs = createPackService({ db, projects, memory, activity, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
+  const handoffs = createHandoffService({ db, projects, git, audits, activity });
   const storage = createStorageService({
     db,
     userDataDir: dir,
@@ -62,7 +65,7 @@ async function setup() {
     activity,
     logger,
     ui,
-    schemaVersion: () => 3,
+    schemaVersion: () => loadMigrations().length,
     reloadSettings: () => settings.reload(),
   });
   registerHandlers(ipc, {
@@ -72,6 +75,9 @@ async function setup() {
     projects,
     audits,
     storage,
+    memory,
+    packs,
+    handoffs,
     git,
     reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
@@ -231,12 +237,80 @@ describe('audit channels', () => {
   });
 });
 
+describe('memory, pack and handoff channels', () => {
+  async function withProject() {
+    const env = await setup();
+    pickedFolder = copyFixture('audit-godot');
+    const added = (await env.call('projects:pickAndAdd')) as { ok: true; value: { project: { id: string } } };
+    return { ...env, id: added.value.project.id };
+  }
+
+  it('memory: overview, preview and save in the app database; saving needs the preview first', async () => {
+    const { call, id } = await withProject();
+    expect(await call('memory:overview', { projectId: id })).toMatchObject({ ok: true, value: { storage: 'app', proposal: [{ type: 'PROJECT_CONTEXT' }, { type: 'DECISIONS' }, { type: 'SESSION_HANDOFF' }] } });
+    expect(await call('memory:save', { projectId: id, docType: 'DECISIONS' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('memory:preview', { projectId: id, docType: 'DECISIONS', content: '# Decisions\n' })).toMatchObject({ ok: true, value: { isNew: true } });
+    expect(await call('memory:save', { projectId: id, docType: 'DECISIONS' })).toEqual({ ok: true, value: { written: true, location: 'App database' } });
+    expect(await call('memory:read', { projectId: id, docType: 'DECISIONS' })).toEqual({ ok: true, value: { content: '# Decisions\n', location: 'App database', exists: true } });
+  });
+
+  it('memory: refuses a folder that leaves the project, an unknown document type and a path field', async () => {
+    const { call, id } = await withProject();
+    expect(await call('memory:setStorage', { projectId: id, storage: 'docs-dir', docsDir: '..' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('memory:read', { projectId: id, docType: 'PASSWORDS' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('memory:preview', { projectId: id, docType: 'TASKS', content: 'x', path: 'C:\\x.md' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+
+  it('writing into the project asks main to confirm first; a declined confirmation writes nothing', async () => {
+    const { call, id } = await withProject();
+    await call('memory:setStorage', { projectId: id, storage: 'project', docsDir: '' });
+    await call('memory:preview', { projectId: id, docType: 'TASKS', content: '# Tasks\n' });
+    uiAnswer = false;
+    expect(await call('memory:save', { projectId: id, docType: 'TASKS' })).toEqual({ ok: true, value: { written: false, location: 'TASKS.md' } });
+    expect(uiCalls).toEqual(['confirm']);
+    uiAnswer = true;
+  });
+
+  it('packs: build, save, list, get, refresh and remove', async () => {
+    const { call, id } = await withProject();
+    const request = { projectId: id, task: 'change the player speed', budget: 4000, extraFiles: [], destination: 'Not sent anywhere yet' };
+    const built = (await call('packs:build', request)) as { ok: true; value: { items: { path: string }[]; saved: boolean } };
+    expect(built.value.items.map((i) => i.path)).toContain('scripts/player.gd');
+    expect(built.value.saved).toBe(false);
+    const saved = (await call('packs:save', { projectId: id, title: 'Speed' })) as { ok: true; value: { id: string } };
+    expect(await call('packs:list', { projectId: id })).toMatchObject({ ok: true, value: [{ id: saved.value.id, title: 'Speed', stale: 0 }] });
+    expect(await call('packs:get', { projectId: id, id: saved.value.id })).toMatchObject({ ok: true, value: { saved: true } });
+    expect(await call('packs:refresh', { projectId: id, id: saved.value.id })).toMatchObject({ ok: true });
+    expect(await call('packs:remove', { projectId: id, id: saved.value.id })).toEqual({ ok: true, value: { removed: true } });
+    expect(await call('packs:get', { projectId: id, id: saved.value.id })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('packs: a hand-picked path outside the project and an oversized budget are refused', async () => {
+    const { call, id } = await withProject();
+    const base = { projectId: id, task: 'x y z', budget: 4000, extraFiles: [], destination: '' };
+    expect(await call('packs:build', { ...base, extraFiles: ['../outside.txt'] })).toMatchObject({ ok: false, error: { code: 'PATH_OUTSIDE_PROJECT' } });
+    expect(await call('packs:build', { ...base, budget: 10_000_000 })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('packs:build', { ...base, cwd: 'C:\\' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+
+  it('handoffs: draft, save, list and latest', async () => {
+    const { call, id } = await withProject();
+    expect(await call('handoffs:latest', { projectId: id })).toEqual({ ok: true, value: null });
+    expect(await call('handoffs:draft', { projectId: id })).toMatchObject({ ok: true, value: { requested: '', nextTask: '' } });
+    const fields = { requested: 'Add jump', changed: 'player.gd', verified: 'ran it', unfinished: 'none', risks: 'none', files: 'player.gd', nextTask: 'tune' };
+    const saved = (await call('handoffs:save', { projectId: id, fields })) as { ok: true; value: { id: string } };
+    expect(await call('handoffs:latest', { projectId: id })).toMatchObject({ ok: true, value: { id: saved.value.id, nextTask: 'tune' } });
+    expect(await call('handoffs:list', { projectId: id })).toMatchObject({ ok: true, value: [{ id: saved.value.id }] });
+    expect(await call('handoffs:save', { projectId: id, fields: { ...fields, extra: 'x' } })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+});
+
 describe('storage channels', () => {
   it('backs up now, lists the backup by file name, and restores only after the native confirmation', async () => {
     const { call } = await setup();
     const made = (await call('storage:backupNow')) as { ok: true; value: { id: string; reason: string } };
     expect(made).toMatchObject({ ok: true, value: { reason: 'manual', id: expect.stringMatching(/^gdcc-.*-manual\.db$/) as unknown } });
-    expect(await call('storage:status')).toMatchObject({ ok: true, value: { schemaVersion: 3, backups: [{ id: made.value.id }] } });
+    expect(await call('storage:status')).toMatchObject({ ok: true, value: { schemaVersion: loadMigrations().length, backups: [{ id: made.value.id }] } });
 
     uiAnswer = false;
     expect(await call('storage:restore', { backupId: made.value.id })).toEqual({ ok: true, value: { staged: false } });

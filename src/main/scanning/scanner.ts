@@ -13,6 +13,8 @@ export interface ScanFile {
   /** Lower-case, with the dot, or an empty string. */
   ext: string;
   size: number;
+  /** Last modification time in milliseconds, for telling when a saved selection of files is out of date. */
+  mtimeMs: number;
 }
 
 export interface ScanResult {
@@ -105,12 +107,13 @@ export async function scanProject(root: string, options: ScanOptions = {}): Prom
         continue;
       }
       let size: number;
+      let mtimeMs: number;
       try {
-        size = lstatSync(join(current.dir, entry.name)).size;
+        ({ size, mtimeMs } = lstatSync(join(current.dir, entry.name)));
       } catch {
         continue;
       }
-      files.push({ path: relative, ext: extname(entry.name).toLowerCase(), size });
+      files.push({ path: relative, ext: extname(entry.name).toLowerCase(), size, mtimeMs });
       bytes += size;
     }
   }

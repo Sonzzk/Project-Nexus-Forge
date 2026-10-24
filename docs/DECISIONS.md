@@ -186,3 +186,15 @@ Applied migrations are recorded in a `schema_migrations` table with checksums. B
 - **Imports are conservative.** Default is keep existing data; replacing needs a native confirmation with a count; rows that clash with a unique value or lack a parent are never imported; new project folders are listed in a native confirmation because the registry otherwise accepts folders only from the folder picker; the current data is backed up first; one transaction.
 - **Audits are not exported.** They are derived from the project and can be run again; process runs are a diagnostic record. Registered exportable tables today: settings, projects, project detections, activity.
 - **Export contains project folder names and notes.** The file is written where the user chooses and the UI says to keep it private. Activity details were redacted when recorded.
+
+## D-034 · Step 9 context and handoff choices (Step 9, Accepted)
+
+- **Documents are stored where the user says; the app database is the default.** Writing into a project is never the default, never automatic and never silent: preview with a diff, a native confirmation that names the file, a check that the file did not change in between, and a read-back.
+- **"Configured documentation directory" means a folder inside the project.** An external folder would need its own authorization and write permission, which belong to Step 15. A relative path is validated like every project path (no `..`, no drive, no links out). Recorded as KI-013.
+- **Propose, do not generate.** The proposal is the missing core documents only (project context, decisions, session handoff) and the starting text is a short outline the person edits; no model writes anything in this step.
+- **No revision history for memory documents.** The diff before every save and Git (for files in the project) are the history. The app database keeps the current text only; adding revisions later is a new table, not a change to this one.
+- **Pack selection is lexical and explainable, not semantic.** Scores come from names, paths and keyword counts in files of 64 KB or less, with a budget of 500 files and 16 MB read per build. The reason for each item is shown. Embeddings or a model-based ranker can replace the scorer later without changing the pack format.
+- **The token figure is an estimate.** Characters divided by four, labeled as an estimate everywhere. Exact counts differ by provider and arrive with the provider adapters (Step 12 and later).
+- **A pack is a request plus a manifest.** Contents are rebuilt from the files, so a saved pack never stores copies of project text in the database. The manifest holds the size, modification time and SHA-256 of each included item.
+- **Hand-picked files follow the same rules.** The sensitive-name list, the binary and size limits, and the scanner's skipped folders apply no matter how a file got on the list; a path that leaves the project rejects the whole request.
+- **The handoff draft is deliberately small.** Only Git and audit facts are prefilled; "what was requested" and "what was verified" are claims only the person can make.

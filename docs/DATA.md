@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 3)
+## Schema (version 4)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -27,6 +27,10 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `projects` | 2 | name, description, type and its source, engine and version, `root_path`, `root_key` (unique), status, tags, instructions, AI and backup preferences (JSON), times | A registered folder. Removing a row never touches the folder. |
 | `project_detections` | 2 | project (cascade), time, type, confidence, engine, evidence (JSON) | What the project's files said when last read. |
 | `audits` | 3 | id, project (cascade), start and finish, file count, the whole report (JSON) | Newest ten per project. |
+| `memory_settings` | 4 | project (cascade), storage (`app`, `project` or `docs-dir`), docs folder | No row means the app database. |
+| `project_docs` | 4 | project (cascade), document type, content, time | Memory documents stored in the app. |
+| `context_packs` | 4 | project (cascade), title, task, budget, destination, hand-picked files, manifest (JSON), estimate | The manifest holds size, time and hash per item, not contents. |
+| `handoffs` | 4 | project (cascade), time, the seven handoff fields | |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 
@@ -55,7 +59,7 @@ At start-up the database gets an integrity check. If it fails (`DB_CORRUPT`) or 
 
 Format `gdcc-export`, `formatVersion` 1: `{ format, formatVersion, appVersion, schemaVersion, exportedAt, tables: { <table id>: [ row, ... ] } }`. Rows are plain objects with one field per column.
 
-Exported tables today: `settings`, `projects`, `project_detections`, `activity_events`. Audits are left out because they can be run again.
+Exported tables today: `settings`, `projects`, `project_detections`, `memory_settings`, `project_docs`, `context_packs`, `handoffs`, `activity_events`. Audits are left out because they can be run again.
 
 Import rules:
 

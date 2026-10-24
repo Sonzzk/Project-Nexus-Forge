@@ -1,5 +1,18 @@
 import { z } from 'zod';
 import { ActivityEventSchema } from '../activity';
+import {
+  ContextPackSchema,
+  DOC_TYPES,
+  HandoffFieldsSchema,
+  HandoffSchema,
+  MAX_DOC_BYTES,
+  MEMORY_STORAGES,
+  MemoryApplyResultSchema,
+  MemoryOverviewSchema,
+  MemoryPreviewSchema,
+  PackRequestSchema,
+  PackSummarySchema,
+} from '../context';
 import { AuditReportSchema, AuditSummarySchema, GitSummarySchema } from '../audit';
 import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
@@ -83,6 +96,38 @@ export const contract = {
     response: z.strictObject({ revealed: z.literal(true) }),
   },
   'git:summary': { request: z.strictObject({ projectId: z.string().max(64) }), response: GitSummarySchema },
+  // Project memory, context packs and handoffs. Documents are named by type, files by project-relative path; writing into a
+  // project is two steps (preview, then save after a native confirmation in main).
+  'memory:overview': { request: z.strictObject({ projectId: z.string().max(64) }), response: MemoryOverviewSchema },
+  'memory:read': {
+    request: z.strictObject({ projectId: z.string().max(64), docType: z.enum(DOC_TYPES) }),
+    response: z.strictObject({ content: z.string().max(MAX_DOC_BYTES * 2), location: z.string().max(400), exists: z.boolean() }),
+  },
+  'memory:preview': {
+    request: z.strictObject({ projectId: z.string().max(64), docType: z.enum(DOC_TYPES), content: z.string().max(MAX_DOC_BYTES * 2) }),
+    response: MemoryPreviewSchema,
+  },
+  'memory:save': {
+    request: z.strictObject({ projectId: z.string().max(64), docType: z.enum(DOC_TYPES) }),
+    response: MemoryApplyResultSchema,
+  },
+  'memory:setStorage': {
+    request: z.strictObject({ projectId: z.string().max(64), storage: z.enum(MEMORY_STORAGES), docsDir: z.string().max(200) }),
+    response: MemoryOverviewSchema,
+  },
+  'packs:build': { request: PackRequestSchema, response: ContextPackSchema },
+  'packs:save': { request: z.strictObject({ projectId: z.string().max(64), title: z.string().max(120) }), response: ContextPackSchema },
+  'packs:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(PackSummarySchema) },
+  'packs:get': { request: z.strictObject({ projectId: z.string().max(64), id: z.string().max(64) }), response: ContextPackSchema },
+  'packs:refresh': { request: z.strictObject({ projectId: z.string().max(64), id: z.string().max(64) }), response: ContextPackSchema },
+  'packs:remove': {
+    request: z.strictObject({ projectId: z.string().max(64), id: z.string().max(64) }),
+    response: z.strictObject({ removed: z.literal(true) }),
+  },
+  'handoffs:draft': { request: z.strictObject({ projectId: z.string().max(64) }), response: HandoffFieldsSchema },
+  'handoffs:save': { request: z.strictObject({ projectId: z.string().max(64), fields: HandoffFieldsSchema }), response: HandoffSchema },
+  'handoffs:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(HandoffSchema) },
+  'handoffs:latest': { request: z.strictObject({ projectId: z.string().max(64) }), response: HandoffSchema.nullable() },
   // Data and backups. Backups are named by file name; export, import and restore choose files in native dialogs in main,
   // and anything that overwrites data or adds a project folder is confirmed there too.
   'storage:status': { request: noInput, response: StorageStatusSchema },

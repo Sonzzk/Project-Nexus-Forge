@@ -610,3 +610,58 @@ h3 {
   margin: var(--space-4) 0 var(--space-1);
   font-size: 1em;
 }
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-4);
+}
+
+.tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[data-state='active'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.diff {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.diff__add {
+  color: var(--ok);
+}
+
+.diff__remove {
+  color: var(--danger);
+}
+
+.diff__skip {
+  color: var(--text-faint);
+}
+
+.pre {
+  white-space: pre-wrap;
+}
+
+.fact {
+  display: contents;
+}

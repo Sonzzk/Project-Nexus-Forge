@@ -31,6 +31,7 @@ describe('settings schema', () => {
       'backup.scheduleEnabled': false,
       'backup.intervalHours': 24,
       'backup.keepCount': 10,
+      'context.defaultBudget': 8000,
     });
   });
 

@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import type { Handoff } from '@shared/context';
+import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
 import { useNav } from '../../app/navigation';
 import { PROJECT_TYPE_LABELS } from '@shared/projects';
@@ -101,6 +104,57 @@ function GitCard() {
   );
 }
 
+function HandoffCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const [latest, setLatest] = useState<Handoff | null | undefined>(undefined);
+  const projectId = selected?.id;
+  useEffect(() => {
+    if (projectId === undefined) return;
+    let cancelled = false;
+    void window.api.invoke('handoffs:latest', { projectId }).then((result) => {
+      if (!cancelled) setLatest(result.ok ? result.value : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  const shown = projectId === undefined ? undefined : latest;
+  const firstLine = (text: string): string => text.trim().split('\n')[0] ?? '';
+  return (
+    <section className="card" aria-label="Latest session handoff" data-feature="card.handoff">
+      <div className="card__head">
+        <h2>Latest session handoff</h2>
+        <button type="button" className="btn" onClick={() => go('context')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its latest handoff.</p>}
+      {selected !== undefined && shown === null && <p className="empty">No handoff saved for this project yet.</p>}
+      {shown && (
+        <dl className="facts">
+          <dt>Saved</dt>
+          <dd>{formatTime(shown.createdAt)}</dd>
+          {firstLine(shown.requested) !== '' && (
+            <>
+              <dt>Requested</dt>
+              <dd>{firstLine(shown.requested)}</dd>
+            </>
+          )}
+          {firstLine(shown.unfinished) !== '' && (
+            <>
+              <dt>Unfinished</dt>
+              <dd>{firstLine(shown.unfinished)}</dd>
+            </>
+          )}
+          <dt>Next</dt>
+          <dd>{firstLine(shown.nextTask) || 'Not recorded'}</dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
 export function Dashboard() {
   const { events, loading, error } = useActivity(8);
   const { selected, select } = useNav();
@@ -130,6 +184,7 @@ export function Dashboard() {
         </section>
         <ProjectsCard />
         <GitCard />
+        <HandoffCard />
         {CARDS.filter((feature) => feature.state !== 'available').map((feature) => (
           <UpcomingCard key={feature.id} feature={feature} />
         ))}

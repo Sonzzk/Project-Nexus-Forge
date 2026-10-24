@@ -5,7 +5,7 @@ import type { GitService } from '../git';
 import type { ActivityLog } from '../logging';
 import type { Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
-import type { AuditService } from '../scanning';
+import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
@@ -19,6 +19,9 @@ export interface HandlerServices {
   projects: ProjectRegistry;
   audits: AuditService;
   storage: StorageService;
+  memory: MemoryService;
+  packs: PackService;
+  handoffs: HandoffService;
   git: GitService;
   /** Shows a file or folder in Windows Explorer. Only ever called with a path that `resolveInside` accepted. */
   reveal: (fullPath: string) => void;
@@ -82,6 +85,27 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
     services.reveal(full);
     return { revealed: true };
   });
+
+  ipc.handle('memory:overview', ({ projectId }) => services.memory.overview(projectId));
+  ipc.handle('memory:read', ({ projectId, docType }) => services.memory.read(projectId, docType));
+  ipc.handle('memory:preview', ({ projectId, docType, content }) => services.memory.preview(projectId, docType, content));
+  ipc.handle('memory:save', ({ projectId, docType }) => services.memory.apply(projectId, docType));
+  ipc.handle('memory:setStorage', ({ projectId, storage, docsDir }) => services.memory.setStorage(projectId, storage, docsDir));
+
+  ipc.handle('packs:build', (request) => services.packs.build(request));
+  ipc.handle('packs:save', ({ projectId, title }) => services.packs.save(projectId, title));
+  ipc.handle('packs:list', ({ projectId }) => services.packs.list(projectId));
+  ipc.handle('packs:get', ({ projectId, id }) => services.packs.get(projectId, id));
+  ipc.handle('packs:refresh', ({ projectId, id }) => services.packs.refresh(projectId, id));
+  ipc.handle('packs:remove', ({ projectId, id }) => {
+    services.packs.remove(projectId, id);
+    return { removed: true };
+  });
+
+  ipc.handle('handoffs:draft', ({ projectId }) => services.handoffs.draft(projectId));
+  ipc.handle('handoffs:save', ({ projectId, fields }) => services.handoffs.save(projectId, fields));
+  ipc.handle('handoffs:list', ({ projectId }) => services.handoffs.list(projectId));
+  ipc.handle('handoffs:latest', ({ projectId }) => services.handoffs.latest(projectId));
 
   ipc.handle('storage:status', () => services.storage.status());
   ipc.handle('storage:backupNow', () => services.storage.backupNow());

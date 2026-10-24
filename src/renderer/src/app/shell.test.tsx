@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEATURES, isUsable } from '@shared/feature-status';
 import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
-import { createFakeApi, sampleEvent, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
+import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -351,7 +351,6 @@ describe('audit and Git', () => {
 
   it('warns when the scan stopped early', async () => {
     const base = sampleReport(2);
-    fake = undefined as never;
     const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
     fake.report = { ...base, scan: { ...base.scan, truncated: ['files'] } };
     await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
@@ -463,5 +462,134 @@ describe('data and backups', () => {
     fake.exportResult = { saved: false, tables: [] };
     await user.click(within(section).getByRole('button', { name: 'Export data…' }));
     expect(await within(section).findByText('Export cancelled.')).toBeTruthy();
+  });
+});
+
+describe('project context', () => {
+  const openContext = async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    await user.click(within(sidebar()).getByRole('button', { name: /^Project Context/ }));
+    await screen.findByRole('heading', { name: 'Project Context' });
+    return user;
+  };
+
+  it('asks for a project first', async () => {
+    const user = await setup();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Project Context/ }));
+    expect(await screen.findByText(/Select a project to see its memory/)).toBeTruthy();
+  });
+
+  it('memory: suggests a minimal set, previews a change before saving, and saving is only possible after the preview', async () => {
+    const user = await openContext();
+    const suggested = await screen.findByRole('region', { name: 'Suggested documents' });
+    expect(within(suggested).getByText('Project context')).toBeTruthy();
+    await user.click(within(suggested).getAllByRole('button', { name: 'Start it…' })[1] as HTMLElement); // Decisions
+    const editor = await screen.findByRole('region', { name: 'Editing Decisions' });
+    const save = within(editor).getByRole('button', { name: 'Save' });
+    expect((save as HTMLButtonElement).disabled).toBe(true); // nothing to save until the change was previewed
+    expect(within(editor).getByLabelText<HTMLTextAreaElement>('Document text').value).toContain('# Decisions: Alpha');
+
+    await user.click(within(editor).getByRole('button', { name: 'Preview changes' }));
+    expect(fake.calls.find((c) => c.channel === 'memory:preview')?.input).toMatchObject({ projectId: 'project-1', docType: 'DECISIONS' });
+    expect(await within(editor).findByLabelText('Changes')).toBeTruthy();
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    await user.click(save);
+    expect(fake.calls.find((c) => c.channel === 'memory:save')?.input).toEqual({ projectId: 'project-1', docType: 'DECISIONS' });
+    expect(await within(editor).findByText('Saved to App database.')).toBeTruthy();
+  });
+
+  it('memory: changing the text clears the preview so an old preview cannot be saved', async () => {
+    const user = await openContext();
+    await user.click((await screen.findAllByRole('button', { name: 'Create Project context' }))[0] as HTMLElement);
+    const editor = await screen.findByRole('region', { name: 'Editing Project context' });
+    await user.click(within(editor).getByRole('button', { name: 'Preview changes' }));
+    await within(editor).findByLabelText('Changes');
+    await user.type(within(editor).getByLabelText('Document text'), ' more');
+    expect(within(editor).queryByLabelText('Changes')).toBeNull();
+    expect(within(editor).getByRole<HTMLButtonElement>('button', { name: 'Save' }).disabled).toBe(true);
+  });
+
+  it('memory: switching to the project folder is a setting change that writes nothing, and saving then says it asks first', async () => {
+    const user = await openContext();
+    const where = await screen.findByRole('region', { name: 'Where memory is stored' });
+    await user.selectOptions(within(where).getByLabelText('Store project memory'), 'project');
+    await user.click(within(where).getByRole('button', { name: 'Use this' }));
+    expect(fake.calls.find((c) => c.channel === 'memory:setStorage')?.input).toEqual({ projectId: 'project-1', storage: 'project', docsDir: 'docs' });
+    expect(fake.calls.some((c) => c.channel === 'memory:save')).toBe(false);
+    await user.click((await screen.findAllByRole('button', { name: 'Create Project context' }))[0] as HTMLElement);
+    expect(within(await screen.findByRole('region', { name: 'Editing Project context' })).getByRole('button', { name: 'Save into the project…' })).toBeTruthy();
+  });
+
+  it('packs: builds a preview with reasons and exclusions, shows the destination and the full text, and saves it by name', async () => {
+    const user = await openContext();
+    await user.click(screen.getByRole('tab', { name: 'Context packs' }));
+    const form = await screen.findByRole('region', { name: 'Build a context pack' });
+    const build = within(form).getByRole('button', { name: 'Build the pack' });
+    expect((build as HTMLButtonElement).disabled).toBe(true);
+    await user.type(within(form).getByLabelText('What is the task?'), 'Make the player faster');
+    await user.selectOptions(within(form).getByLabelText('Destination'), 'Claude Code (cloud)');
+    await user.click(build);
+    expect(fake.calls.find((c) => c.channel === 'packs:build')?.input).toEqual({
+      projectId: 'project-1', task: 'Make the player faster', budget: 8000, extraFiles: [], destination: 'Claude Code (cloud)',
+    });
+    const preview = await screen.findByRole('region', { name: 'Context pack preview' });
+    expect(within(preview).getByText('scripts/player.gd')).toBeTruthy();
+    expect(within(preview).getByText('logo.png')).toBeTruthy();
+    expect(within(preview).getByText(/about 420 of 8,000 tokens \(estimate\)/)).toBeTruthy();
+    expect(within(preview).getByText(/everything that would be sent/)).toBeTruthy();
+    expect(within(preview).getByLabelText('Pack text').textContent).toContain('## File: scripts/player.gd');
+
+    await user.clear(within(preview).getByLabelText('Pack name'));
+    await user.type(within(preview).getByLabelText('Pack name'), 'Speed work');
+    await user.click(within(preview).getByRole('button', { name: 'Save the pack' }));
+    expect(fake.calls.find((c) => c.channel === 'packs:save')?.input).toEqual({ projectId: 'project-1', title: 'Speed work' });
+    const saved = await screen.findByRole('list', { name: 'Saved packs' });
+    expect(await within(saved).findByText('Speed work')).toBeTruthy();
+    expect(within(saved).getByText('Up to date')).toBeTruthy();
+  });
+
+  it('packs: shows which files made a saved pack out of date', async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    fake.packList = [{ id: 'pack-9', title: 'Old pack', destination: 'Ollama (local)', estimate: 300, files: 2, createdAt: '2026-10-23T04:00:00.000Z', stale: 1 }];
+    fake.packResult = { ...samplePack(), id: 'pack-9', title: 'Old pack', saved: true, stale: [{ path: 'scripts/util.gd', change: 'changed' }] };
+    await user.click(within(sidebar()).getByRole('button', { name: /^Project Context/ }));
+    await user.click(await screen.findByRole('tab', { name: 'Context packs' }));
+    const list = await screen.findByRole('list', { name: 'Saved packs' });
+    expect(await within(list).findByText('Out of date (1)')).toBeTruthy();
+    await user.click(within(list).getByRole('button', { name: 'Open Old pack' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('scripts/util.gd (changed)');
+    await user.click(screen.getByRole('button', { name: 'Rebuild with the current files' }));
+    expect(fake.calls.some((c) => c.channel === 'packs:refresh')).toBe(true);
+  });
+
+  it('handoffs: drafts from the project, saves all seven fields, lists the result, and can send it to the Session handoff document', async () => {
+    const user = await openContext();
+    await user.click(screen.getByRole('tab', { name: 'Session handoffs' }));
+    const form = await screen.findByRole('region', { name: 'New session handoff' });
+    await user.click(within(form).getByRole('button', { name: 'Draft from the project' }));
+    expect(within(form).getByLabelText<HTMLTextAreaElement>('What remains unfinished').value).toContain('TODO: add jump');
+    await user.type(within(form).getByLabelText('What was requested'), 'Add jumping');
+    await user.type(within(form).getByLabelText('Next recommended task'), 'Tune the jump');
+    await user.click(within(form).getByRole('button', { name: 'Save the handoff' }));
+    const sent = fake.calls.find((c) => c.channel === 'handoffs:save')?.input as { fields: Record<string, string> };
+    expect(Object.keys(sent.fields).sort()).toEqual(['changed', 'files', 'nextTask', 'requested', 'risks', 'unfinished', 'verified']);
+    expect(sent.fields['requested']).toBe('Add jumping');
+
+    const history = await screen.findByRole('region', { name: 'Saved handoffs' });
+    expect(await within(history).findByText(/next: Tune the jump/)).toBeTruthy();
+    await user.click(within(history).getByRole('button', { name: /Use as the Session handoff document/ }));
+    const editor = await screen.findByRole('region', { name: 'Editing Session handoff' });
+    expect(within(editor).getByLabelText<HTMLTextAreaElement>('Document text').value).toContain('## What was requested\n\nAdd jumping');
+  });
+
+  it('the dashboard card shows the latest handoff of the selected project', async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    expect(await within(await screen.findByRole('region', { name: 'Latest session handoff' })).findByText('No handoff saved for this project yet.')).toBeTruthy();
+    fake.handoffs = [{ id: 'h1', projectId: 'project-1', createdAt: '2026-10-24T05:00:00.000Z', requested: 'Add jumping', changed: '', verified: '', unfinished: '', risks: '', files: '', nextTask: 'Tune the jump' }];
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const card = await screen.findByRole('region', { name: 'Latest session handoff' });
+    expect(await within(card).findByText('Tune the jump')).toBeTruthy();
+    expect(within(card).getByText('Add jumping')).toBeTruthy();
   });
 });

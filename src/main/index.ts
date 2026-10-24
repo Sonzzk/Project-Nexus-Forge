@@ -15,7 +15,7 @@ import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
-import { createAuditService } from './scanning';
+import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
 import {
   applyPendingRestore,
@@ -148,7 +148,7 @@ async function startServices(): Promise<void> {
     return result.canceled ? undefined : result.filePaths[0];
   };
   const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
-  for (const table of [settingsTable, ...projectTables, activityTable]) transfer.register(table);
+  for (const table of [settingsTable, ...projectTables, ...contextTables, activityTable]) transfer.register(table);
   const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const ui: StorageUi = {
     confirm: async (options) => {
@@ -213,6 +213,18 @@ async function startServices(): Promise<void> {
       budgetMs: settingsStore.get('audit.timeBudgetSeconds') * 1000,
     }),
   });
+  const memory = createMemoryService({ db, projects, activity, confirm: (options) => ui.confirm(options) });
+  const packs = createPackService({
+    db,
+    projects,
+    memory,
+    activity,
+    limits: () => ({
+      maxFiles: settingsStore.get('audit.maxFiles'),
+      budgetMs: settingsStore.get('audit.timeBudgetSeconds') * 1000,
+    }),
+  });
+  const handoffs = createHandoffService({ db, projects, git, audits, activity });
   registerHandlers(ipc, {
     logger,
     settings: settingsStore,
@@ -220,6 +232,9 @@ async function startServices(): Promise<void> {
     projects,
     audits,
     storage,
+    memory,
+    packs,
+    handoffs,
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),
     pickFolder,

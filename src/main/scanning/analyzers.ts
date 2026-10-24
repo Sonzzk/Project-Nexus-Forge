@@ -76,7 +76,7 @@ const ASSET_CATEGORIES: Record<string, string[]> = {
 };
 const CATEGORY_OF = new Map<string, string>(Object.entries(ASSET_CATEGORIES).flatMap(([category, exts]) => exts.map((ext): [string, string] => [ext, category])));
 
-const TEXT_EXTENSIONS = new Set([
+export const TEXT_EXTENSIONS = new Set([
   ...Object.keys(LANGUAGES), '.md', '.txt', '.rst', '.json', '.toml', '.yml', '.yaml', '.ini', '.cfg', '.xml', '.cmake', '.gradle',
   '.tscn', '.tres', '.godot', '.uproject', '.uplugin', '.sln', '.csproj', '.vue', '.svelte', '.scss',
 ]);
