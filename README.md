@@ -11,7 +11,7 @@ It is built with Electron, React and TypeScript (Vite), with SQLite for app data
 
 ## Status
 
-The plan and the design are done (Steps 1 and 2) and the app is scaffolded (Step 3): a secure Electron window with a placeholder page, and working dev, build, lint, test and end-to-end commands. There are no features yet; each roadmap step adds one. Development needs Node.js 24 LTS on Windows 11 (see [decision D-012](docs/DECISIONS.md)). [STATUS.md](docs/STATUS.md) always has the current step.
+The plan and the design are done (Steps 1 and 2), the app is scaffolded (Step 3) and its core is built (Step 4): a secure Electron window, typed IPC, logging with redaction, a SQLite database with migrations and backups, settings, an activity log and a safe process runner, with working dev, build, lint, test and end-to-end commands. There are no user-facing features yet; each roadmap step adds one. Development needs Node.js 24 LTS on Windows 11 (see [decision D-012](docs/DECISIONS.md)). [STATUS.md](docs/STATUS.md) always has the current step.
 
 ## Install and run (Windows)
 

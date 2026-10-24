@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
+import { launchApp } from './launch';
 
 let userData: string;
 let app: ElectronApplication;
@@ -10,12 +11,7 @@ let page: Page;
 
 test.beforeAll(async () => {
   userData = mkdtempSync(join(tmpdir(), 'gdcc-e2e-'));
-  app = await electron.launch({
-    args: ['.'],
-    env: { ...process.env, GDCC_USER_DATA_DIR: userData },
-  });
-  page = await app.firstWindow();
-  await page.waitForLoadState('domcontentloaded');
+  ({ app, page } = await launchApp(userData));
 });
 
 test.afterAll(async () => {
@@ -60,13 +56,17 @@ test('renderer is served from app://renderer and has no Node access', async () =
   });
 });
 
-test('preload exposes an empty frozen window.api', async () => {
+test('preload exposes a frozen window.api with exactly invoke and on, and no raw Electron objects', async () => {
   const api = await page.evaluate(() => ({
-    keys: Object.keys(window.api),
+    keys: Object.keys(window.api).sort(),
     frozen: Object.isFrozen(window.api),
+    types: Object.values(window.api).map((value) => typeof value),
+    leaks: ['ipcRenderer', 'electron', 'send', 'sendSync'].filter((name) => name in window),
   }));
-  expect(api.keys).toEqual([]);
+  expect(api.keys).toEqual(['invoke', 'on']);
   expect(api.frozen).toBe(true);
+  expect(api.types).toEqual(['function', 'function']);
+  expect(api.leaks).toEqual([]);
 });
 
 test('content security policy is set by header and by meta tag, and blocks inline scripts', async () => {

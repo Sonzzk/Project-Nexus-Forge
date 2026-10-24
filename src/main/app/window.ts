@@ -6,7 +6,9 @@ import { APP_ORIGIN, isAllowedUrl } from './navigation';
 const ICON_PATH = join(app.getAppPath(), 'assets/icon/nexus-ai.ico');
 
 /** Dev server URL set by electron-vite while developing; undefined in a built app. */
-const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL'] || undefined;
+export const rendererDevServerUrl = app.isPackaged
+  ? undefined
+  : process.env['ELECTRON_RENDERER_URL'] || undefined;
 
 /** Denies permission prompts, new windows, webviews and navigation away from our pages, for every window. */
 export function installSecurityGuards(): void {
@@ -16,7 +18,7 @@ export function installSecurityGuards(): void {
 
   app.on('web-contents-created', (_event, contents) => {
     const block = (event: { preventDefault(): void }, url: string): void => {
-      if (!isAllowedUrl(url, devServerUrl)) event.preventDefault();
+      if (!isAllowedUrl(url, rendererDevServerUrl)) event.preventDefault();
     };
     contents.on('will-navigate', (event, url) => block(event, url));
     contents.on('will-redirect', (event, url) => block(event, url));
@@ -52,6 +54,6 @@ export function createMainWindow(): BrowserWindow {
   });
 
   window.once('ready-to-show', () => window.show());
-  void window.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
+  void window.loadURL(rendererDevServerUrl ?? `${APP_ORIGIN}/index.html`);
   return window;
 }

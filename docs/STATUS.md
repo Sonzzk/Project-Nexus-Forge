@@ -1,25 +1,26 @@
 # Status
 
-**Current step:** Step 3 · Project setup and scaffolding: done (2026-10-24, tag `step-03`)
-**Next step:** Step 4 · Core application structure (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-4--core-application-structure).
+**Current step:** Step 4 · Core application structure: done (2026-10-24, tag `step-04`)
+**Next step:** Step 5 · Dashboard and UI (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-5--dashboard-and-ui).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
 - **Step 2.** `docs/ARCHITECTURE.md` written; every dependency verified and pinned; decisions D-011 to D-027 recorded; docs check extended to dependency pins and module owners. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (14 of 14 passed, including the seven new negative cases).
-
-- **Step 3.** Hand-written electron-vite scaffold (Electron 45, React 19, TypeScript 6, Vite 8): secure window on the `app://renderer` scheme with CSP, empty `window.api`, dev/build/typecheck/lint/test/e2e/docs scripts, README install steps. Verified by all six gates (below) on the working tree and on a clean copy of the tracked files (`npm ci`, then every gate), and by starting the app through `scripts\launch.cmd` (the window "GameDev Command Center" opened and showed the placeholder page).
+- **Step 3.** Hand-written electron-vite scaffold (Electron 45, React 19, TypeScript 6, Vite 8): secure window on the `app://renderer` scheme with CSP, dev/build/typecheck/lint/test/e2e/docs scripts, README install steps. Verified by all six gates on the working tree and on a clean copy of the tracked files (`npm ci`, then every gate), and by starting the app through `scripts\launch.cmd`.
+- **Step 4.** Typed IPC, errors, logging with redaction, SQLite with migrations and backups, settings store, activity log, process runner and shutdown coordinator (details in ARCHITECTURE.md section 17 and D-029). Verified by all six gates (below), by a clean copy of the tracked files, and by a real launch through `scripts\launch.cmd` and a clean window close.
 
 ## In progress
 - Nothing.
 
 ## Blocked
-- Nothing. Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
+- **GitHub push of `step-03` and `step-04`.** Git Credential Manager asked which account to use ("Select an account" window on the PC) and nobody has answered, so the commits and both tags are local only. Choose `Sonzzk` and Continue; the waiting push then completes, or run `git push origin main --follow-tags` in the project folder.
+- Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 4: typed IPC, logging with redaction, SQLite with migrations and backups, settings store, activity events, process runner, graceful shutdown. It also proves `node:sqlite` inside the built Electron app (KI-006).
+- Step 5: the application shell (design tokens, sidebar with the 11 sections, top bar, command palette, resizable panels, feature-status manifest, dashboard frame with real recent activity from `activity:list`). It starts from `window.api`, the activity log and the `ui.density` setting that Step 4 provides.
 
 ## Application feature status
-The app opens a window with a placeholder page. Every feature in the spec is **not started**; the roadmap says which step builds each one.
+The app opens a window that shows its version, database schema, data folder and log file. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested; no user-facing feature exists yet. Every feature in the spec is **not started**; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -38,11 +39,11 @@ The app opens a window with a placeholder page. Every feature in the spec is **n
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
 
-## Handoff: Step 3
-- **Requested:** a minimal Electron + React + TypeScript + Vite app that launches on Windows with secure defaults and working dev, test, lint and build commands; the desktop shortcut opens it.
-- **Changed:** added `package.json` and `package-lock.json` (exact pins, all `devDependencies`, D-028), `.npmrc`, `.gitignore`, `.prettierrc`, `.prettierignore`, `electron.vite.config.ts`, `eslint.config.mjs`, `vitest.config.mts`, `playwright.config.ts`, `tsconfig.json` and the `node`, `web` and `e2e` projects; `src/main` (`index.ts`, `app/window.ts`, `app/protocol.ts`, `app/navigation.ts`, `app/renderer-path.ts`), `src/preload/index.ts`, `src/renderer` (placeholder page), `src/shared` (`csp.ts`, `api.ts`, `window.d.ts`); tests `src/**/*.test.ts` and `test/e2e/security.e2e.ts`; updated `scripts/launch.cmd`, `README.md`, `CLAUDE.md` (gates), ARCHITECTURE.md (what Step 3 did), D-028, KI-007 and KI-009, KI-001 removed, `CHANGELOG.md` and this file.
-- **Verified (2026-10-24):** `npm run typecheck`, `npm run lint` (a planted `node:fs` import and `dangerouslySetInnerHTML` in the renderer both failed lint), `npm test` (23 of 23), `npm run build`, `npm run check:docs` (docs check passed, 14 of 14, including the package.json versus pin comparison), `npm run test:e2e` (6 of 6: window preferences, no `require`/`process`/`module`/`Buffer`, `app://` origin, empty frozen `window.api`, CSP header and meta tag, inline script blocked, navigation and `window.open` blocked, traversal and missing files answer 404). A clean copy of the tracked files passed all of it after `npm ci`. `scripts\launch.cmd` started the dev app and its window opened.
-- **Unfinished:** nothing in Step 3. `node:sqlite` is not exercised yet (Step 4 does, KI-006). The packaged-app icon and fuses are Step 27. The default Electron menu is still there (KI-009).
-- **Known risks:** Electron 45.0.0 is a new major (re-check before release, Step 27); Playwright's Electron support is experimental (KI-007) but worked; `getLastWebPreferences()` is untyped in Electron 45 (D-028).
-- **Relevant files:** `src/main/app/window.ts` (window preferences and guards), `src/main/app/protocol.ts`, `src/shared/csp.ts`, `test/e2e/security.e2e.ts`, `electron.vite.config.ts`.
-- **Next task:** Step 4 · Core application structure.
+## Handoff: Step 4
+- **Requested:** the foundations every feature uses: typed IPC, errors, logging with redaction, SQLite with migrations and backups, a settings store, activity events, a safe process runner and a graceful shutdown path.
+- **Changed:** added `src/shared` (`errors.ts`, `settings.ts`, `activity.ts`, `ipc/channels.ts`, `ipc/contract.ts`, `ipc/events.ts`, a real `api.ts`); `src/main` modules `ipc/`, `logging/`, `storage/` (with `migrations/0001_init.sql`), `settings/`, `security/sensitive-paths.ts`, `process/`, `app/shutdown.ts`, `app/crash.ts`, a composition root in `index.ts`; the preload bridge (`invoke`, `on`); renderer error reporting and the info panel; test helpers in `test/helpers` and `test/e2e/core.e2e.ts`; lint rules for module indexes, `child_process`, `node:sqlite` and `fetch`; Zod 4.6.7; ARCHITECTURE.md section 17, D-029, KI-006 (updated), KI-010, KI-011, `CHANGELOG.md`, `README.md` and this file.
+- **Verified (2026-10-24):** `npm run typecheck`, `npm run lint` (planted violations of every new import rule failed it), `npm test` (206 of 206 in 15 files), `npm run build` (`node:sqlite` stays external, SQL inlined, preload 0.9 kB), `npm run check:docs` (passed, 14 of 14), `npm run test:e2e` (9 of 9). A clean copy of the tracked files passed all six after `npm ci`. A real launch through `scripts\launch.cmd` created `%APPDATA%\GameDevCommandCenter\data\gdcc.db` and `logs\main.log`, showed the info panel, and closing the window logged "shutting down" and "shutdown finished" with no Electron process left. That run also left one `app.started` row in the real database, which is genuine app data.
+- **Unfinished:** the push of `step-03` and `step-04` (see Blocked). No UI beyond the info panel. A damaged or newer database ends in an error box, not a recovery screen (KI-010, Step 8). Nothing starts a real tool through the runner yet (KI-011).
+- **Known risks:** `node:sqlite` is still a release candidate (KI-006); the shim rules for `.cmd` programs must be respected by Steps 7, 12 and 15 (D-029); the sync SQLite connection runs on the main thread, so large queries must be paged (ARCHITECTURE.md section 15).
+- **Relevant files:** `src/main/index.ts` (composition and startup), `src/main/ipc/handle.ts`, `src/main/storage/migrator.ts`, `src/main/process/runner.ts`, `src/shared/ipc/contract.ts`, `test/e2e/core.e2e.ts`.
+- **Next task:** Step 5 · Dashboard and UI.

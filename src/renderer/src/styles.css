@@ -25,3 +25,20 @@ body {
   color: #a3a9b5;
   line-height: 1.5;
 }
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin-top: 2rem;
+  font-size: 0.875rem;
+}
+
+.facts dt {
+  color: #a3a9b5;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

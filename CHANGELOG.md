@@ -7,6 +7,24 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 4 · Core application structure (2026-10-24, tag `step-04`)
+
+### Added
+- Typed IPC: channel registry, Zod request and response schemas, a handler wrapper (shutdown refusal, sender check, strict request parsing, validated response, error envelope), `window.api` with `invoke` and `on`, and five channels (`app:getInfo`, `app:reportRendererError`, `settings:get`, `settings:set`, `activity:list`). A contract test rejects request shapes that carry paths, commands or working directories.
+- Typed errors (`AppError`, `ErrorCode`) with plain messages and hints.
+- Logging: JSON-lines `logs\main.log` with rotation, a shared secret `Redactor`, the sensitive-path denylist (`isSensitivePath`), renderer error reporting (20 a minute), crash capture.
+- SQLite through `node:sqlite`: schema v1 (`schema_migrations`, `settings`, `activity_events`, `process_runs`), a migrator with checksums, verified single-file backups before every migration of an existing database (newest ten kept), all-or-nothing migrations, integrity check on open, and refusal to touch a damaged or newer database.
+- Settings store with defaults and fallback (`logging.level`, `ui.density`) and the activity log (`ActivityLog.record`, `app.started`, `app.stopped`).
+- `ProcessRunner` (the only code that spawns): argument arrays, `.cmd` shim handling, timeout, output cap, cancel with process-tree kill, owner registry, `process_runs` records, cleanup on quit.
+- Graceful shutdown coordinator (ordered steps, per-step and total deadlines, force kill at the ceiling).
+- The window shows version, database schema, data folder and log file from `app:getInfo`.
+- 206 unit and integration tests and 9 end-to-end tests; lint rules for module `index.ts` imports, `child_process`, `node:sqlite` and `fetch`.
+- Zod 4.6.7; decision D-029; known issues KI-010 and KI-011.
+
+### Changed
+- KI-006 now records that `node:sqlite` is proven inside the built app.
+- ARCHITECTURE.md gets section 17 (what Step 4 did and where it differs from the sketches).
+
 ## Step 3 · Project setup and scaffolding (2026-10-24, tag `step-03`)
 
 ### Added

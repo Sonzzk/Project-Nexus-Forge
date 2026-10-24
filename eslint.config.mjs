@@ -29,6 +29,27 @@ const renderOnlyBans = [
   },
 ];
 
+const MODULES_WITH_INDEX = ['storage', 'process', 'logging', 'settings', 'security', 'ipc'];
+function mainBans({ allowChildProcess = false, allowSqlite = false } = {}) {
+  return [
+    testBan,
+    ...MODULES_WITH_INDEX.map((name) => ({
+      // Relative imports only, so `@shared/ipc/...` is not mistaken for main's ipc module.
+      regex: String.raw`^\.{1,2}/(?:.*/)?${name}/(?!index$).+$`,
+      message: `Import from the ${name} module's index, not its internals.`,
+    })),
+    ...(allowChildProcess
+      ? []
+      : [
+          {
+            group: ['child_process', 'node:child_process'],
+            message: 'Only src/main/process spawns programs.',
+          },
+        ]),
+    ...(allowSqlite ? [] : [{ group: ['node:sqlite'], message: 'Only src/main/storage uses node:sqlite.' }]),
+  ];
+}
+
 export default tseslint.config(
   {
     ignores: [
@@ -96,7 +117,33 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts'],
+    files: ['src/preload/**/*.ts'],
     rules: { 'no-restricted-imports': ['error', { patterns: [testBan] }] },
+  },
+  // Main-process rules (ARCHITECTURE.md section 4): other modules import only a module's index.ts, only process/ spawns,
+  // only storage/ touches node:sqlite, and nothing in main uses the global fetch until providers/ollama/ exists.
+  {
+    files: ['src/main/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: mainBans() }],
+      'no-restricted-globals': ['error', 'fetch'],
+    },
+  },
+  {
+    files: ['src/main/process/**/*.ts'],
+    rules: { 'no-restricted-imports': ['error', { patterns: mainBans({ allowChildProcess: true }) }] },
+  },
+  {
+    files: ['src/main/storage/**/*.ts'],
+    rules: { 'no-restricted-imports': ['error', { patterns: mainBans({ allowSqlite: true }) }] },
+  },
+  // Tests sit next to the code and may use test/helpers and Node; a renderer test still may not.
+  {
+    files: ['src/main/**/*.test.ts', 'src/preload/**/*.test.ts', 'src/shared/**/*.test.ts'],
+    rules: { 'no-restricted-imports': 'off' },
+  },
+  {
+    files: ['src/renderer/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-imports': ['error', { patterns: renderOnlyBans }] },
   },
 );
