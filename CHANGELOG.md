@@ -2,6 +2,12 @@
 
 Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 
+## Unreleased
+
+### Added
+- `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon. Steps 3 and 27 use it for the window and installer.
+- `scripts/launch.cmd`: desktop shortcut target. Starts the app with `npm run dev`; until Step 3 scaffolds the app it prints that the app is not built yet.
+
 ## Step 1 · Overall architecture and requirements (2026-10-24, tag `step-01`)
 
 ### Added

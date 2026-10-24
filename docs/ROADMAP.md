@@ -140,6 +140,7 @@ The user's step order differs from the spec's phase order in a few places. The r
   - `.gitignore` for dependencies, build output, databases, logs and env files.
   - npm scripts: `dev`, `build`, `typecheck`, `lint`, `test`, `check:docs` (wrapping the Step 1 check).
   - README: how to install and run on Windows.
+  - Use `assets/icon/nexus-ai.ico` (source `nexus-ai.png`) as the window and app icon, and make `scripts/launch.cmd` (the desktop shortcut target) start the dev app.
 - **Acceptance criteria:**
   - A clean clone installs and `npm run dev` opens the window on Windows.
   - `typecheck`, `lint`, `test` and `build` pass.
@@ -511,7 +512,7 @@ The user's step order differs from the spec's phase order in a few places. The r
 - **Goal:** A reproducible Windows build with an icon, upgrade checks, local crash logging and beginner-friendly docs.
 - **Depends on:** Step 26
 - **Scope:**
-  - Installer and/or portable build with the tool chosen in Step 2; icon and metadata; configurable display name separate from the internal app id.
+  - Installer and/or portable build with the tool chosen in Step 2; icon (`assets/icon/nexus-ai.ico`, the Nexus AI icon) and metadata; configurable display name separate from the internal app id.
   - User data kept across upgrades; migration checks with backup on upgrade; local crash and error logging (no uploads); automated smoke test on the packaged build.
   - Reproducible build instructions, troubleshooting guide, README. No auto-updater that runs unverified updates.
 - **Acceptance criteria:**
