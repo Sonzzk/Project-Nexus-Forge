@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 7 · Project auditing (2026-10-24, tag `step-07`)
+
+### Added
+- A read-only audit of a registered project: engine and version, languages, major folders, entry points, documentation, build and test commands, assets, Git, TODO and FIXME items, file relationships, identical files, and risks. Every finding is marked Confirmed (with the file that proves it) or Inferred. Audits are stored with timestamps, can be run again, and the last ten are kept.
+- A bounded scanner (file, depth and time limits; sensitive files, generated folders and links skipped) and a ProjectReader that refuses paths outside the project, sensitive and binary files.
+- A read-only Git service (branch, ahead and behind, uncommitted changes, recent commits; "Not a Git repository." and missing Git handled), the Git and Changes page and the dashboard Recent changes card.
+- Schema v3 (`audits`), channels `audit:*` and `git:summary`, settings `audit.maxFiles` and `audit.timeBudgetSeconds`. Decision D-032, known issue KI-012.
+
 ## Step 6 · Project registry (2026-10-24, tag `step-06`)
 
 ### Added

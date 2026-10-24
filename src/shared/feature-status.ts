@@ -53,7 +53,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('workbench', 'AI Workbench', 'upcoming', 12),
   nav('tasks', 'Tasks and Roadmap', 'upcoming', 10),
   nav('context', 'Project Context', 'upcoming', 9),
-  nav('git', 'Git and Changes', 'upcoming', 7),
+  nav('git', 'Git and Changes', 'available', 7, 'Read-only status and recent commits; diff review and revert arrive in Step 16.'),
   nav('testing', 'Testing', 'upcoming', 23),
   nav('assets', 'Assets', 'upcoming', 22),
   nav('integrations', 'Integrations', 'upcoming', 12),
@@ -149,7 +149,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     state: 'upcoming',
     step: 12,
   },
-  { id: 'card.git', kind: 'card', label: 'Recent changes', section: 'git', state: 'upcoming', step: 7 },
+  { id: 'card.git', kind: 'card', label: 'Recent changes', section: 'git', state: 'available', step: 7 },
   { id: 'card.tests', kind: 'card', label: 'Test status', section: 'testing', state: 'upcoming', step: 23 },
   {
     id: 'card.handoff',

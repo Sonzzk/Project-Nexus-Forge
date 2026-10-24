@@ -4,6 +4,7 @@ import { PROJECT_TYPE_LABELS } from '@shared/projects';
 import { useActivity } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
 import { ActivityRows } from '../ActivityRows';
+import { GitFacts, useGitSummary } from '../git/GitPage';
 
 const CARDS = FEATURES.filter((feature) => feature.kind === 'card');
 
@@ -77,6 +78,29 @@ function ProjectsCard() {
   );
 }
 
+function GitCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const { git, error } = useGitSummary(selected?.id);
+  return (
+    <section className="card" aria-label="Recent changes" data-feature="card.git">
+      <div className="card__head">
+        <h2>Recent changes</h2>
+        <button type="button" className="btn" onClick={() => go('git')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its branch and recent commits.</p>}
+      {error !== undefined && (
+        <p role="alert">
+          {error.message} {error.hint}
+        </p>
+      )}
+      {git !== undefined && <GitFacts git={git} />}
+    </section>
+  );
+}
+
 export function Dashboard() {
   const { events, loading, error } = useActivity(8);
   const { selected, select } = useNav();
@@ -105,6 +129,7 @@ export function Dashboard() {
           {events.length > 0 && <ActivityRows events={events} selectedId={selected?.id} onSelect={select} />}
         </section>
         <ProjectsCard />
+        <GitCard />
         {CARDS.filter((feature) => feature.state !== 'available').map((feature) => (
           <UpcomingCard key={feature.id} feature={feature} />
         ))}

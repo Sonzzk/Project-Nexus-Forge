@@ -502,3 +502,76 @@ textarea {
 .row--card {
   grid-template-columns: 8px minmax(0, 1fr);
 }
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.audit-section {
+  border-top: 1px solid var(--line);
+  padding: var(--space-2) 0;
+}
+
+.audit-section > summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
+.findings {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.finding {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.finding p {
+  margin: var(--space-1) 0 0;
+}
+
+.finding [data-severity='warning'] {
+  color: var(--warn);
+}
+
+.badge[data-kind='confirmed'] {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.badge[data-kind='inferred'] {
+  border-style: dashed;
+}
+
+.commit {
+  padding: var(--space-1) 0;
+}
+
+.badge--warn {
+  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+  color: var(--warn);
+}

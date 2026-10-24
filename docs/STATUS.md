@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 6 · Project registry: done (2026-10-24, tag `step-06`)
-**Next step:** Step 7 · Project auditing (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-7--project-auditing).
+**Current step:** Step 7 · Project auditing: done (2026-10-24, tag `step-07`)
+**Next step:** Step 8 · Persistent storage (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-8--persistent-storage).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -11,6 +11,7 @@
 - **Step 5.** The application shell: tokens and density, sidebar, top bar, command palette, inspector, resizable panels, feature-status manifest, Implementation Status page, dashboard with live recent activity, Activity and Settings pages (ARCHITECTURE.md section 18, D-030). Verified by all six gates and by looking at the real window (screenshots of the dashboard with the inspector open).
 
 - **Step 6.** Project registry: register folders through a native picker, read-only type detection with stored evidence and a manual override, the Projects page, a working project switcher (ARCHITECTURE.md section 19, D-031). Verified by all six gates and a snapshot test showing no project file changes.
+- **Step 7.** Read-only project audit (13 sections, every finding Confirmed with evidence or Inferred), bounded scanner, ProjectReader and path policy, read-only Git service, the audit panel, the Git and Changes page and the dashboard Recent changes card (ARCHITECTURE.md section 20, D-032). Verified by all six gates and a snapshot test showing no project file changes.
 
 ## In progress
 - Nothing.
@@ -20,10 +21,10 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 7: a bounded, read-only scanner and analyzers, a read-only Git service through the process runner, and the audit report page with Confirmed versus Inferred findings.
+- Step 8: documented schema, manual and scheduled backups with retention, restore that backs up first, versioned JSON export and import with preview, the recovery screen for a damaged or newer database (KI-010).
 
 ## Application feature status
-The app has a working shell, a project registry with detection and overrides, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
+The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
 
 ## Workspace snapshot (2026-10-24)
 
@@ -42,11 +43,11 @@ The app has a working shell, a project registry with detection and overrides, a 
 | VS Code | installed |
 | Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
 
-## Handoff: Step 6
-- **Requested:** register existing projects by folder without moving or modifying them, with evidence-based type detection and manual override; Projects page, working switcher, activity events.
-- **Changed:** `src/shared/projects.ts`, migration `0002_projects.sql`, `src/main/projects/` (`detect.ts`, `registry.ts`), five `projects:*` channels and handlers, the folder picker in `src/main/index.ts`, `src/renderer/src/lib/projects.tsx`, the Projects page, the top-bar switcher and dashboard card, manifest states, fixtures in `test/fixtures/projects`, `test/helpers/tree.ts`, `test/e2e/projects.e2e.ts`; ARCHITECTURE.md section 19, D-031, CHANGELOG and this file.
-- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (273 of 273), `build`, `check:docs` (14 of 14) and `test:e2e` (15 of 15, including add through the stubbed picker, an override and tags surviving a restart, and removal leaving the folder identical).
-- **Unfinished:** nothing in Step 6. The user's real Backrooms project was not registered or read (its folder is not known to the app); detection was proven on fixtures only. Archived projects are stored but not yet treated differently anywhere.
-- **Known risks:** detection reads only the top level of a folder, so a project whose `.uproject` or `project.godot` sits in a subfolder is reported as unidentified until the user overrides it (Step 7's audit looks deeper).
-- **Relevant files:** `src/main/projects/detect.ts`, `src/main/projects/registry.ts`, `src/main/projects/projects.test.ts`, `src/renderer/src/features/projects/ProjectsPage.tsx`.
-- **Next task:** Step 7 · Project auditing.
+## Handoff: Step 7
+- **Requested:** a read-only, evidence-based audit report for a registered project: bounded scanner, analyzers, read-only Git through the process runner, and a report UI with Confirmed and Inferred findings, stored and re-runnable.
+- **Changed:** `src/main/scanning/` (`scanner.ts`, `reader.ts`, `analyzers.ts`, `audit.ts`), `src/main/git/`, `src/main/security/path-policy.ts`, migration `0003_audits.sql`, `src/shared/audit.ts`, six channels (`audit:*`, `git:summary`) and handlers, settings `audit.maxFiles` and `audit.timeBudgetSeconds`, `src/renderer/src/lib/audit.ts`, the audit panel, the Git page, the dashboard card, manifest states (Git and Changes, Recent changes now available), fixtures `audit-godot` and `audit-node`, `test/e2e/audit.e2e.ts`; ARCHITECTURE.md section 20, D-032, KI-012, CHANGELOG and this file. Part of the scanner, reader, Git service and audit schema was written by an earlier thread that stopped at a usage limit; it was reviewed, tested and kept.
+- **Verified (2026-10-24):** `npm run typecheck`, `lint`, `test` (338 of 338), `build`, `check:docs` (14 of 14) and `test:e2e` (18 of 18, including an audit of a fixture project with a stored report surviving a restart, and a real Git repository read through the Git page).
+- **Unfinished:** nothing in Step 7. The user's real Backrooms project was not registered or audited. A `.env` file placed inside a fixture is never read (tested). Git was exercised against a Git 2.46.2 repository created in a temp folder.
+- **Known risks:** heuristic findings are Inferred and can be wrong or incomplete (KI-012); a very large project hits the default scan limits and the report says so.
+- **Relevant files:** `src/main/scanning/analyzers.ts`, `src/main/scanning/audit.ts`, `src/main/git/git.ts`, `src/renderer/src/features/audit/AuditPanel.tsx`.
+- **Next task:** Step 8 · Persistent storage.

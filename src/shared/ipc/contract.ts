@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActivityEventSchema } from '../activity';
+import { AuditReportSchema, AuditSummarySchema, GitSummarySchema } from '../audit';
 import { ProjectPatchSchema, ProjectSchema } from '../projects';
 import { SETTING_KEYS, SettingsSchema } from '../settings';
 import type { ChannelName } from './channels';
@@ -60,6 +61,20 @@ export const contract = {
     request: z.strictObject({ id: z.string().max(64) }),
     response: z.strictObject({ removed: z.literal(true) }),
   },
+  // Audits are read-only. The folder comes from the registry; the page only names a project and, to reveal a file, a
+  // project-relative path that main resolves inside the project root.
+  'audit:run': { request: z.strictObject({ projectId: z.string().max(64) }), response: AuditReportSchema },
+  'audit:latest': { request: z.strictObject({ projectId: z.string().max(64) }), response: AuditReportSchema.nullable() },
+  'audit:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(AuditSummarySchema) },
+  'audit:get': {
+    request: z.strictObject({ projectId: z.string().max(64), auditId: z.string().max(64) }),
+    response: AuditReportSchema,
+  },
+  'audit:reveal': {
+    request: z.strictObject({ projectId: z.string().max(64), relativePath: z.string().min(1).max(400) }),
+    response: z.strictObject({ revealed: z.literal(true) }),
+  },
+  'git:summary': { request: z.strictObject({ projectId: z.string().max(64) }), response: GitSummarySchema },
 } satisfies Record<ChannelName, { request: z.ZodType; response: z.ZodType }>;
 
 /** What the renderer sends. */

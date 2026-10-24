@@ -42,3 +42,7 @@ If `gdcc.db` fails its integrity check, is not a SQLite file, or was made by a n
 ## KI-011 · The process runner is proven only against small Node programs (found in Step 4, accepted)
 
 `ProcessRunner` has 35 tests (timeout, cancel with a grandchild process, graceful stop, output cap, duplicate owner, shutdown cleanup, `.cmd` shim, redacted `process_runs` rows), all using Node scripts and a temp `.cmd` file. Nothing starts a real tool yet (Git, Claude Code, engines); the first steps that do (7, 12, 15) must check their command lines against the shim rules in D-029. The non-Windows branch (`SIGKILL` of the PID) exists only so unit tests could run elsewhere and is untested; the app is Windows-first.
+
+## KI-012 · The audit is a heuristic reader, not a compiler (found in Step 7, accepted)
+
+Languages, entry points, file relationships and commands come from names, extensions and small text files, so dynamic imports, generated code, Unreal Blueprints and binary `.uasset` and `.unity` contents are not understood; those findings are Inferred or only counted. The scan stops at 20,000 files, depth 12 or 8 seconds by default and says so in the report; a very large Unreal project will usually hit a limit (the Binaries, Intermediate, Saved and DerivedDataCache folders are skipped first). The audit was proven on fixtures; the user's real Backrooms project was not audited (its folder is not registered).

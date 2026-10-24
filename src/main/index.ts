@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { AppError } from '@shared/errors';
 import type { AppInfo } from '@shared/ipc/contract';
 import { installCrashHandlers } from './app/crash';
@@ -7,12 +7,14 @@ import { isAllowedUrl } from './app/navigation';
 import { registerAppScheme, rendererRootFor, serveRenderer } from './app/protocol';
 import { createShutdownCoordinator } from './app/shutdown';
 import { createMainWindow, installSecurityGuards, rendererDevServerUrl } from './app/window';
+import { createGitService } from './git';
 import { createEmitter, createIpc, registerHandlers } from './ipc';
 import { createActivityLog, type ActivityLog } from './logging';
 import { createLogger } from './logging';
 import { createRedactor } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry } from './projects';
+import { createAuditService } from './scanning';
 import { createSettingsStore, type SettingsStore } from './settings';
 import { openAppDatabase } from './storage';
 
@@ -75,7 +77,8 @@ async function startServices(): Promise<void> {
     logger: logger.child('activity'),
     emit: (event) => emit('activity:appended', event),
   });
-  settings = createSettingsStore({ db, logger: logger.child('settings'), activity });
+  const settingsStore = createSettingsStore({ db, logger: logger.child('settings'), activity });
+  settings = settingsStore;
 
   const runStore = createProcessRunStore(db, redactor, logger);
   runStore.markStaleRunsLost();
@@ -124,7 +127,30 @@ async function startServices(): Promise<void> {
         : await dialog.showOpenDialog(window, options);
     return result.canceled ? undefined : result.filePaths[0];
   };
-  registerHandlers(ipc, { logger, settings, activity, projects, pickFolder, appInfo });
+  const git = createGitService({ runner, logger: logger.child('git') });
+  const audits = createAuditService({
+    db,
+    projects,
+    git,
+    activity,
+    logger: logger.child('audit'),
+    redactor,
+    limits: () => ({
+      maxFiles: settingsStore.get('audit.maxFiles'),
+      budgetMs: settingsStore.get('audit.timeBudgetSeconds') * 1000,
+    }),
+  });
+  registerHandlers(ipc, {
+    logger,
+    settings: settingsStore,
+    activity,
+    projects,
+    audits,
+    git,
+    reveal: (fullPath) => shell.showItemInFolder(fullPath),
+    pickFolder,
+    appInfo,
+  });
   shutdown.register('ipc', 10, () => undefined); // `shutdown.isShuttingDown` already refuses new IPC calls
 
   activity.record({

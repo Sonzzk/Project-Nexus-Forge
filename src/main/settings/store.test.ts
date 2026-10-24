@@ -26,6 +26,8 @@ describe('settings schema', () => {
       'ui.inspectorOpen': false,
       'ui.layout': {},
       'projects.selectedId': null,
+      'audit.maxFiles': 20_000,
+      'audit.timeBudgetSeconds': 8,
     });
   });
 

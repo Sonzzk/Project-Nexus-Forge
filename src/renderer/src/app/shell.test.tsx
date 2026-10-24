@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEATURES, isUsable } from '@shared/feature-status';
 import { COMPLETED_THROUGH_STEP } from '@shared/roadmap-steps';
-import { createFakeApi, sampleEvent, sampleProject, type FakeApi } from '../../../../test/mocks/fake-api';
+import { createFakeApi, sampleEvent, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -76,13 +76,13 @@ describe('manifest wiring', () => {
 describe('navigation', () => {
   it('opens a page for each section; an upcoming one says which step builds it and offers no controls', async () => {
     const user = await setup();
-    await user.click(within(sidebar()).getByRole('button', { name: /^Git and Changes/ }));
-    expect(screen.getByRole('heading', { name: 'Git and Changes' })).toBeTruthy();
-    expect(screen.getByText(/arrives in Step 7/)).toBeTruthy();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Testing/ }));
+    expect(screen.getByRole('heading', { name: 'Testing' })).toBeTruthy();
+    expect(screen.getByText(/arrives in Step 23/)).toBeTruthy();
     expect(within(document.querySelector('.workspace') as HTMLElement).queryAllByRole('button')).toEqual([]);
     expect(
       within(sidebar())
-        .getByRole('button', { name: /^Git and Changes/ })
+        .getByRole('button', { name: /^Testing/ })
         .getAttribute('aria-current'),
     ).toBe('page');
 
@@ -324,5 +324,67 @@ describe('projects', () => {
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
     await vi.waitFor(() => expect(fake.projects).toEqual([]));
     expect(await screen.findByText(/No projects yet/)).toBeTruthy();
+  });
+});
+
+describe('audit and Git', () => {
+  const withProject = () =>
+    setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+
+  it('offers to run the first audit, shows the report with Confirmed and Inferred marks, and links evidence to Explorer', async () => {
+    const user = await withProject();
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    const panel = await screen.findByRole('region', { name: 'Audit of Alpha' });
+    expect(await within(panel).findByText('This project has not been audited yet.')).toBeTruthy();
+    await user.click(within(panel).getByRole('button', { name: 'Run an audit' }));
+    expect(fake.calls.find((c) => c.channel === 'audit:run')?.input).toEqual({ projectId: 'project-1' });
+    await within(panel).findByText(/Audited/);
+    expect(within(panel).getAllByText('Confirmed').length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText('Inferred')).toHaveLength(1);
+    await user.click(within(panel).getByText(/Engine and version/));
+    await user.click(within(panel).getByRole('button', { name: 'Show project.godot in Explorer' }));
+    expect(fake.revealed).toEqual(['project.godot']);
+    // The page sends a project id and a project-relative path, never a folder.
+    expect(fake.calls.find((c) => c.channel === 'audit:reveal')?.input).toEqual({ projectId: 'project-1', relativePath: 'project.godot' });
+    expect(within(panel).getByRole('button', { name: 'Run the audit again' })).toBeTruthy();
+  });
+
+  it('warns when the scan stopped early', async () => {
+    const base = sampleReport(2);
+    fake = undefined as never;
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    fake.report = { ...base, scan: { ...base.scan, truncated: ['files'] } };
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    expect(await screen.findByText(/The scan stopped early \(files limit\)/)).toBeTruthy();
+  });
+
+  it('shows Git facts for the selected project, and "Not a Git repository." instead of an error', async () => {
+    const user = await withProject();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Git and Changes/ }));
+    const card = await screen.findByRole('region', { name: 'Git status of Alpha' });
+    expect(await within(card).findByText('Not a Git repository.')).toBeTruthy();
+
+    fake.git = {
+      available: true,
+      isRepository: true,
+      branch: 'main',
+      upstream: 'origin/main',
+      ahead: 1,
+      behind: 0,
+      changes: { staged: 0, modified: 2, untracked: 1, conflicted: 0 },
+      recentCommits: [{ hash: 'a'.repeat(40), author: 'Sam', date: '2026-10-24T01:00:00Z', subject: 'Add jump' }],
+    };
+    await user.click(within(card).getByRole('button', { name: 'Refresh' }));
+    expect(await within(card).findByText('main')).toBeTruthy();
+    expect(within(card).getByText('0 staged · 2 modified · 1 untracked')).toBeTruthy();
+    expect(within(card).getByText('Add jump')).toBeTruthy();
+  });
+
+  it('asks for a project first on the Git page, and shows the same facts on the dashboard card', async () => {
+    const user = await setup();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Git and Changes/ }));
+    expect(await screen.findByText('Select a project to see its Git status.')).toBeTruthy();
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    expect(within(await screen.findByRole('region', { name: 'Recent changes' })).getByText(/Select a project/)).toBeTruthy();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import type { NavSection } from '@shared/feature-status';
 import { ActivityPage } from '../features/activity/ActivityPage';
+import { GitPage } from '../features/git/GitPage';
 import { Dashboard } from '../features/dashboard/Dashboard';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -19,6 +20,7 @@ import { TopBar } from './TopBar';
 const PAGES: Partial<Record<NavSection, ComponentType>> = {
   dashboard: Dashboard,
   projects: ProjectsPage,
+  git: GitPage,
   activity: ActivityPage,
   settings: SettingsPage,
   status: StatusPage,

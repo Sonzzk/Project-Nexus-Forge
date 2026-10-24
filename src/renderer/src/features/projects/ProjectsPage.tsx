@@ -7,6 +7,7 @@ import {
   type Project,
   type ProjectType,
 } from '@shared/projects';
+import { AuditPanel } from '../audit/AuditPanel';
 import { formatTime } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
 
@@ -263,7 +264,12 @@ export function ProjectsPage() {
             </li>
           ))}
         </ul>
-        {open !== undefined && <ProjectDetail key={open.id} project={open} />}
+        {open !== undefined && (
+          <div className="stack">
+            <ProjectDetail key={open.id} project={open} />
+            <AuditPanel key={`audit-${open.id}`} project={open} />
+          </div>
+        )}
       </div>
     </div>
   );

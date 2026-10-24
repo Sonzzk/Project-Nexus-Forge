@@ -12,10 +12,13 @@ import { createIpc, type InvokeEventLike } from './handle';
 import { registerHandlers } from './handlers';
 import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
+import { createAuditService } from '../scanning';
+import { createGitService } from '../git';
 
 afterEach(removeTempDirs);
 
 let pickedFolder: string | undefined;
+let revealed: string[] = [];
 
 async function setup() {
   const { db } = await openMigratedDb();
@@ -30,11 +33,18 @@ async function setup() {
     isShuttingDown: () => false,
   });
   const projects = createProjectRegistry({ db, activity, logger });
+  const redactor = createRedactor();
+  const git = createGitService({ runner: { start: () => { throw new Error('no process'); } } as never, logger, locate: () => undefined });
+  const audits = createAuditService({ db, projects, git, activity, logger, redactor, limits: () => ({ maxFiles: 20_000, budgetMs: 8000 }) });
+  revealed = [];
   registerHandlers(ipc, {
     logger,
     settings,
     activity,
     projects,
+    audits,
+    git,
+    reveal: (full) => void revealed.push(full),
     pickFolder: () => Promise.resolve(pickedFolder),
     appInfo: () => ({
       name: 'T',
@@ -152,6 +162,46 @@ describe('project channels', () => {
     expect(await call('projects:remove', { id })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   });
 });
+describe('audit channels', () => {
+  async function withProject() {
+    const env = await setup();
+    pickedFolder = copyFixture('audit-godot');
+    const added = (await env.call('projects:pickAndAdd')) as { ok: true; value: { project: { id: string; rootPath: string } } };
+    return { ...env, id: added.value.project.id, root: added.value.project.rootPath };
+  }
+
+  it('runs an audit, returns the stored report as latest, lists it and fetches it by id', async () => {
+    const { call, id } = await withProject();
+    expect(await call('audit:latest', { projectId: id })).toEqual({ ok: true, value: null });
+    const run = (await call('audit:run', { projectId: id })) as { ok: true; value: { id: string; sections: unknown[] } };
+    expect(run).toMatchObject({ ok: true, value: { projectId: id } });
+    expect(run.value.sections).toHaveLength(13);
+    expect(await call('audit:latest', { projectId: id })).toEqual(run);
+    expect(await call('audit:list', { projectId: id })).toMatchObject({ ok: true, value: [{ id: run.value.id }] });
+    expect(await call('audit:get', { projectId: id, auditId: run.value.id })).toEqual(run);
+    expect(await call('audit:run', { projectId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('git:summary answers for a project even when Git is not installed', async () => {
+    const { call, id } = await withProject();
+    expect(await call('git:summary', { projectId: id })).toMatchObject({ ok: true, value: { available: false, isRepository: false } });
+    expect(await call('git:summary', { projectId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('reveals only files inside the project; a path that leaves it or does not exist is refused and nothing is shown', async () => {
+    const { call, id, root } = await withProject();
+    expect(await call('audit:reveal', { projectId: id, relativePath: 'scripts/player.gd' })).toEqual({ ok: true, value: { revealed: true } });
+    expect(revealed).toHaveLength(1);
+    expect(revealed[0]?.toLowerCase()).toContain('player.gd');
+    for (const bad of ['../outside.txt', 'C:\\Windows\\win.ini', '\\\\server\\share']) {
+      expect(await call('audit:reveal', { projectId: id, relativePath: bad })).toMatchObject({ ok: false, error: { code: 'PATH_OUTSIDE_PROJECT' } });
+    }
+    expect(await call('audit:reveal', { projectId: id, relativePath: 'missing.txt' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await call('audit:reveal', { projectId: id, relativePath: 'x', absolute: root })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(revealed).toHaveLength(1);
+  });
+});
+
 describe('createRateLimiter', () => {
   it('allows max calls per window and frees a slot as old calls age out', () => {
     let now = 0;

@@ -12,6 +12,12 @@ export const CHANNELS = [
   'projects:update',
   'projects:redetect',
   'projects:remove',
+  'audit:run',
+  'audit:latest',
+  'audit:list',
+  'audit:get',
+  'audit:reveal',
+  'git:summary',
 ] as const;
 
 export const EVENTS = ['activity:appended'] as const;

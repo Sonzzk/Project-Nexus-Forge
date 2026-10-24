@@ -25,7 +25,7 @@ test('first start creates the database and the log, and records app.started', as
     expect(existsSync(join(userData, 'backups'))).toBe(false); // a brand-new database needs no backup
 
     const info = await page.evaluate(() => window.api.invoke('app:getInfo', {}));
-    expect(info).toMatchObject({ ok: true, value: { schemaVersion: 2, platform: process.platform } });
+    expect(info).toMatchObject({ ok: true, value: { schemaVersion: 3, platform: process.platform } });
 
     const activity = await page.evaluate(() => window.api.invoke('activity:list', { limit: 10 }));
     expect(activity.ok && activity.value.map((event) => event.kind)).toEqual(['app.started']);

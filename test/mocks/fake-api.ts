@@ -1,6 +1,7 @@
 import type { ActivityEvent } from '../../src/shared/activity';
 import type { Api } from '../../src/shared/api';
 import type { IpcResult } from '../../src/shared/errors';
+import type { AuditReport, GitSummary } from '../../src/shared/audit';
 import type { Project } from '../../src/shared/projects';
 import type { EventName } from '../../src/shared/ipc/channels';
 import { SETTING_KEYS, SettingsSchema, type Settings } from '../../src/shared/settings';
@@ -15,6 +16,12 @@ export interface FakeApi {
   settings: Settings;
   events: ActivityEvent[];
   projects: Project[];
+  /** The stored audit that `audit:latest` answers with, and what the next `audit:run` produces. */
+  report: AuditReport | null;
+  nextReport: AuditReport;
+  git: GitSummary;
+  /** Project-relative paths the page asked to reveal. */
+  revealed: string[];
   /** What the native folder picker returns next: a project to add, or null for cancel. */
   nextPick: Project | null;
   /** Delivers an event to subscribers, as main would. */
@@ -31,6 +38,10 @@ export function createFakeApi(
     events: initial.events ?? [],
     projects: initial.projects ?? [],
     nextPick: null,
+    report: null,
+    nextReport: sampleReport(1),
+    git: { available: true, isRepository: false, message: 'Not a Git repository.' },
+    revealed: [],
     emit: (event, payload) => listeners.get(event)?.forEach((listener) => listener(payload)),
     api: undefined as unknown as Api,
   };
@@ -115,6 +126,21 @@ export function createFakeApi(
       fake.projects = fake.projects.filter((p) => p.id !== (input as { id: string }).id);
       return Promise.resolve({ ok: true, value: { removed: true } });
     }
+    if (channel === 'audit:latest') return Promise.resolve({ ok: true, value: fake.report });
+    if (channel === 'audit:list')
+      return Promise.resolve({
+        ok: true,
+        value: fake.report ? [{ id: fake.report.id, projectId: fake.report.projectId, finishedAt: fake.report.finishedAt, files: fake.report.scan.files }] : [],
+      });
+    if (channel === 'audit:run') {
+      fake.report = fake.nextReport;
+      return Promise.resolve({ ok: true, value: fake.report });
+    }
+    if (channel === 'audit:reveal') {
+      fake.revealed.push((input as { relativePath: string }).relativePath);
+      return Promise.resolve({ ok: true, value: { revealed: true } });
+    }
+    if (channel === 'git:summary') return Promise.resolve({ ok: true, value: fake.git });
     if (channel === 'activity:list') return Promise.resolve({ ok: true, value: fake.events });
     return Promise.resolve({
       ok: false,
@@ -166,5 +192,41 @@ export const sampleProject = (n: number, overrides: Partial<Project> = {}): Proj
   },
   createdAt: '2026-10-24T01:00:00.000Z',
   updatedAt: '2026-10-24T01:00:00.000Z',
+  ...overrides,
+});
+
+export const sampleReport = (n: number, overrides: Partial<AuditReport> = {}): AuditReport => ({
+  id: `audit-${n}`,
+  projectId: 'project-1',
+  startedAt: '2026-10-24T02:00:00.000Z',
+  finishedAt: '2026-10-24T02:00:01.000Z',
+  scan: {
+    files: 12,
+    directories: 3,
+    bytes: 2048,
+    skippedHeavyDirs: [],
+    sensitiveFilesSkipped: 0,
+    linksSkipped: 0,
+    truncated: [],
+    elapsedMs: 40,
+  },
+  git: { available: true, isRepository: false, message: 'Not a Git repository.' },
+  sections: [
+    {
+      id: 'overview',
+      title: 'Overview',
+      summary: '1 fact about the folder.',
+      findings: [{ kind: 'confirmed', title: '12 files in 3 folders', evidence: [{ path: '.', detail: 'Counted by the scanner' }] }],
+    },
+    {
+      id: 'engine',
+      title: 'Engine and version',
+      summary: 'Godot project, engine 4.3',
+      findings: [
+        { kind: 'confirmed', title: 'Godot project, engine 4.3', evidence: [{ path: 'project.godot', detail: 'Godot project file' }] },
+        { kind: 'inferred', title: 'src/main.gd looks like an entry point', evidence: [{ path: 'src/main.gd' }] },
+      ],
+    },
+  ],
   ...overrides,
 });

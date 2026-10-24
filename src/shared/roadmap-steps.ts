@@ -34,4 +34,4 @@ export const ROADMAP_STEPS: readonly { n: number; title: string }[] = [
 ];
 
 /** The last step that is finished and tagged. Each step bumps this in the same commit that completes it. */
-export const COMPLETED_THROUGH_STEP = 6;
+export const COMPLETED_THROUGH_STEP = 7;
