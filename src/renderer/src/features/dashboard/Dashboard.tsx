@@ -414,6 +414,38 @@ function EngineCard() {
   );
 }
 
+/** Blender scenes, tracked asset files and the last headless run of the selected project. Read from the app's records and the project's files. */
+function AssetsCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const view = useJson(selected?.id, (id) => window.api.invoke('blender:view', { projectId: id }));
+  const last = view?.runs[0];
+  const attention = view?.assets.filter((a) => a.status !== 'unchanged').length ?? 0;
+  return (
+    <section className="card" aria-label="Assets and Blender" data-feature="card.assets">
+      <div className="card__head">
+        <h2>Assets and Blender</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its assets.</p>}
+      {view !== undefined && (
+        <dl className="facts">
+          <dt>Blender</dt>
+          <dd>{view.installs[0]?.version === undefined ? 'Not found' : `Blender ${view.installs[0].version ?? 'unknown version'}`}</dd>
+          <dt>Scenes</dt>
+          <dd>{view.files.length}</dd>
+          <dt>Tracked files</dt>
+          <dd>{view.assets.length === 0 ? 'None' : `${view.assets.length}${attention > 0 ? `, ${attention} changed or missing` : ''}`}</dd>
+          <dt>Last run</dt>
+          <dd>{last === undefined ? 'None yet' : `${last.outcome} · ${last.source}${last.originalUnchanged ? '' : ' · ORIGINAL CHANGED'}`}</dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function NextActionCard() {
   const { selected } = useProjects();
   const { go } = useNav();
@@ -516,6 +548,7 @@ export function Dashboard() {
         <ResourcesCard />
         <UsageCard />
         <EngineCard />
+        <AssetsCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

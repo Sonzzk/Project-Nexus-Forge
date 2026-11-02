@@ -15,7 +15,7 @@ import type { CommandService, PermissionService, WriteGate } from '../security';
 import type { ChangeService, OverviewService } from '../changes';
 import type { DiagnosticsService } from '../diagnostics';
 import type { SessionService } from '../sessions';
-import type { EngineService, ProfileService } from '../engines';
+import type { AssetService, BlenderService, EngineService, ProfileService } from '../engines';
 import type { AttentionItem } from '@shared/sessions';
 import type { Retention } from '../logging';
 import { resolveInside } from '../security';
@@ -50,6 +50,8 @@ export interface HandlerServices {
   retention: Retention;
   engines: EngineService;
   profiles: ProfileService;
+  blender: BlenderService;
+  assets: AssetService;
   /** The last resource check, without measuring again. */
   resourcesLatest: () => ResourceReport | null;
   /** A fresh resource snapshot with the local-inference verdict. */
@@ -193,6 +195,22 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('engines:open', ({ projectId, target }) => services.engines.open(projectId, target));
   ipc.handle('engines:addPath', () => services.engines.addEnginePath());
   ipc.handle('engines:removePath', ({ index }) => services.engines.removeEnginePath(index));
+  ipc.handle('blender:view', ({ projectId }) => services.blender.view(projectId));
+  ipc.handle('blender:addPath', () => services.blender.addPath());
+  ipc.handle('blender:removePath', ({ index }) => services.blender.removePath(index));
+  ipc.handle('blender:open', ({ projectId, relativePath }) => services.blender.open(projectId, relativePath));
+  ipc.handle('blender:inspect', ({ projectId, relativePath }) => services.blender.inspect(projectId, relativePath));
+  ipc.handle('blender:approveScript', ({ projectId, scriptPath }) => services.blender.approveScript(projectId, scriptPath));
+  ipc.handle('blender:revokeScript', ({ id }) => services.blender.revokeScript(id));
+  ipc.handle('blender:runApproved', ({ projectId, scriptPath, relativePath }) => services.blender.runScript(projectId, scriptPath, relativePath));
+  ipc.handle('blender:run', ({ id }) => services.blender.run(id));
+  ipc.handle('blender:revealRun', ({ id }) => services.blender.revealRun(id));
+  ipc.handle('assets:track', ({ projectId, relativePath, note, tags }) => services.assets.track({ projectId, path: relativePath, note, tags }));
+  ipc.handle('assets:untrack', ({ id }) => services.assets.untrack(id));
+  ipc.handle('briefs:list', ({ projectId }) => services.assets.briefs(projectId));
+  ipc.handle('briefs:save', (input) => services.assets.saveBrief(input));
+  ipc.handle('briefs:remove', ({ id }) => services.assets.removeBrief(id));
+  ipc.handle('briefs:handoff', ({ id }) => services.assets.handoff(id));
   ipc.handle('commands:history', ({ projectId }) => services.commands.history(projectId));
   ipc.handle('commands:log', ({ id }) => services.commands.log(id));
   ipc.handle('permissions:view', async ({ projectId }) => {

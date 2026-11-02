@@ -38,6 +38,8 @@ export interface RetentionOptions {
   logger: Logger;
   logDir: string;
   settings: () => RetentionSettings;
+  /** Removes Blender run records and their folders older than the cutoff; returns how many (counted with the program records). */
+  pruneBlenderRuns?: (cutoffIso: string) => number;
   now?: () => Date;
   /** How often the prune repeats. */
   everyMs?: number;
@@ -59,6 +61,7 @@ export function createRetention(options: RetentionOptions): Retention {
     if (s.processRunDays > 0) result.processRuns = db.run("DELETE FROM process_runs WHERE status != 'running' AND COALESCE(ended_at, started_at) < ?", cutoff(s.processRunDays)).changes;
     if (s.sessionDays > 0) result.sessions = db.run("DELETE FROM run_sessions WHERE outcome != 'running' AND COALESCE(ended_at, started_at) < ?", cutoff(s.sessionDays)).changes;
     if (s.processRunDays > 0) result.processRuns += db.run('DELETE FROM command_runs WHERE COALESCE(ended_at, started_at) < ?', cutoff(s.processRunDays)).changes;
+    if (s.processRunDays > 0) result.processRuns += options.pruneBlenderRuns?.(cutoff(s.processRunDays)) ?? 0;
     if (s.usageDays > 0) result.usage = db.run("DELETE FROM usage_log WHERE status != 'running' AND started_at < ?", cutoff(s.usageDays)).changes;
     if (existsSync(options.logDir)) {
       for (const name of readdirSync(options.logDir)) {

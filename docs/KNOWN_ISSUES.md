@@ -120,3 +120,17 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **The project description is a count, not an asset index.** Binary assets are counted and named by folder, never opened; plugin dependencies, redirectors and asset references are not analyzed. A very large `Content` folder stops counting at 20,000 entries and says so.
 - **The Backrooms profile stores only your confirmations.** Hints are word matches on target, module, plugin, folder and map names and can be wrong or missing; they never confirm anything. It does not read a design document.
 - **Command logs are kept for the retention period of program records** (60 days by default) and the output is cut to the last 200,000 characters.
+
+## KI-023 · Blender integration limits (found in Step 19, accepted)
+
+- **Scripts are not sandboxed.** The copy protects the `.blend` only; an approved script can read and write anything your account can and can start programs. The approval window says so.
+- **Factory startup.** Runs ignore your preferences and add-ons (`--factory-startup`), so a script that needs one of your add-ons fails with Blender's message. Only the add-ons that ship with Blender are available.
+- **Large scenes.** A scene over 2 GB is refused; copying and fingerprinting a big one takes time and disk space, and only one Blender run goes at a time. Content hashing is skipped above 1 GiB, where only size and time are compared.
+- **Version of an unusual file is unknown.** Compressed files are read by decompressing the first 64 KB; if that fails the version shows "unknown" and the newer-Blender warning cannot be given. Files from Blender before 2.8 were not tested.
+- **Inspect counts data blocks**, not the evaluated scene: triangles are before modifiers, linked libraries are listed but not opened, and procedural or geometry-node output is not counted. Missing-file checks cover images, sounds, fonts and movie clips.
+- **No export or import is run by the app.** A script you approve can export, and its outputs are recorded; the import notes are a checklist. Copying results into the project is left to you.
+- **Opening a scene is a hand-off.** Windows picks the Blender version; the app cannot tell which one opened or stop it.
+- **Live bridge not built.** The app starts Blender itself; it does not talk to a running Blender window (add-on or MCP). A Blender MCP server configured elsewhere on this PC is not used by the app.
+- **Tracking compares size and modification time**, not content, so a file rewritten with the same size and time is not noticed.
+- **The real-Blender tests run only where Blender is found** (`GDCC_BLENDER_DIR` or Program Files). Elsewhere they are skipped and reported as skipped, not passed.
+- **Live check scope:** two small real scenes were described on copies; no real script was run against your files, and `Locker2.blend` (190 MB) and the asset-pack files were only scanned (headers), not opened by Blender.

@@ -23,7 +23,7 @@ import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { createChangeService, createOverviewService } from './changes';
 import { createDiagnosticsService } from './diagnostics';
-import { createEngineService, createProfileService, describeUnrealProject, unrealContextText } from './engines';
+import { assetTables, createAssetService, createBlenderService, createEngineService, createProfileService, describeUnrealProject, unrealContextText } from './engines';
 import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
@@ -160,7 +160,7 @@ async function startServices(): Promise<void> {
     return result.canceled ? undefined : result.filePaths[0];
   };
   const transfer = createTransfer({ db, appVersion: app.getVersion(), schemaVersion: () => database.migrator.current() });
-  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, ...agentTables, ...usageTables, activityTable]) transfer.register(table);
+  for (const table of [settingsTable, ...projectTables, ...contextTables, ...planningTables, ...assetTables, ...agentTables, ...usageTables, activityTable]) transfer.register(table);
   const parent = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const ui: StorageUi = {
     confirm: async (options) => {
@@ -355,6 +355,27 @@ async function startServices(): Promise<void> {
     env: () => process.env,
   });
   const profiles = createProfileService({ db, projects, activity });
+  const assets = createAssetService({ db, projects, activity });
+  const blender = createBlenderService({
+    db,
+    projects,
+    runner,
+    activity,
+    permissions,
+    assets,
+    confirm: (options) => ui.confirm(options),
+    logger: logger.child('blender'),
+    redactor,
+    openPath: (fullPath) => shell.openPath(fullPath),
+    pickFolder: async (title) => {
+      const box = { title, properties: ['openDirectory' as const] };
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const result = window === undefined ? await dialog.showOpenDialog(box) : await dialog.showOpenDialog(window, box);
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    env: () => process.env,
+    workRoot: join(userDataDir, 'blender-work'),
+  });
   const commands = createCommandService({
     extra: (projectId) => engines.commandsFor(projectId),
     db,
@@ -429,6 +450,7 @@ async function startServices(): Promise<void> {
     activity,
     logger: logger.child('retention'),
     logDir: join(userDataDir, 'logs'),
+    pruneBlenderRuns: (cutoffIso) => blender.prune(cutoffIso),
     settings: () => ({
       activityDays: settingsStore.get('retention.activityDays'),
       processRunDays: settingsStore.get('retention.processRunDays'),
@@ -479,6 +501,8 @@ async function startServices(): Promise<void> {
     retention,
     engines,
     profiles,
+    blender,
+    assets,
     resourcesLatest: latestReport,
     resources: () => report(),
     git,

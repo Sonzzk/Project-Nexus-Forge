@@ -14,7 +14,7 @@ import type { Review } from '@shared/changes';
 import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
-import { attachEngines, sampleUnrealView, type FakeEngines } from '../../../../test/mocks/fake-engines';
+import { attachBlender, attachEngines, sampleBlenderView, sampleUnrealView, type FakeBlender, type FakeEngines } from '../../../../test/mocks/fake-engines';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -1258,10 +1258,12 @@ describe('the AI Workbench', () => {
 describe('integrations and AI help', () => {
   let providers: FakeProviders;
   let engines: FakeEngines;
-  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}) => {
+  let blender: FakeBlender;
+  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}, blenderSeed: Parameters<typeof attachBlender>[1] = {}) => {
     const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
     providers = attachProviders(fake, seed);
     engines = attachEngines(fake, engineSeed);
+    blender = attachBlender(fake, blenderSeed);
     attachPlanning(fake);
     await user.click(within(sidebar()).getByRole('button', { name: /^Integrations/ }));
     await screen.findByRole('heading', { name: 'Integrations' });
@@ -1511,6 +1513,107 @@ describe('integrations and AI help', () => {
       await user.click(within(systems).getByRole('checkbox', { name: 'Multiplayer and networking' }));
       expect(engines.profile.confirmed).toEqual(['multiplayer']);
       expect(await within(profile).findByText('Multiplayer and networking is in scope')).toBeTruthy();
+    });
+
+    it('lists Blender installs and scenes, warns about a scene saved by a newer Blender, and states what is not built', async () => {
+      await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      const installs = await within(card).findByRole('table', { name: 'Blender installations' });
+      expect(within(installs).getByText('5.1.2')).toBeTruthy();
+      const scenes = within(card).getByRole('table', { name: 'Blender scenes' });
+      expect(within(scenes).getByText('Saved by a newer Blender than any installed one.')).toBeTruthy();
+      expect(within(scenes).getByText(/1 backup file beside it/)).toBeTruthy();
+      const caps = within(card).getByRole('table', { name: 'Blender capability report' });
+      expect(within(caps).getByText('Unavailable')).toBeTruthy();
+      expect(within(card).getByText(/Your \.blend files are never opened for writing/)).toBeTruthy();
+    });
+
+    it('says plainly when Blender is not installed or the project has no .blend', async () => {
+      await openIntegrations({}, {}, { view: sampleBlenderView({ installs: [], configuredPaths: [], hasBlend: false, files: [], scripts: [] }) });
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      expect(await within(card).findByText(/No Blender installation was found/)).toBeTruthy();
+      expect(within(card).getByText(/has no \.blend file/)).toBeTruthy();
+    });
+
+    it('inspects a scene and shows the facts, that the original is unchanged, and the run in the list', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      await user.click(await within(card).findByRole('button', { name: 'Inspect art/chair.blend' }));
+      const details = await within(card).findByLabelText('Run details');
+      expect(within(details).getByText(/Unchanged \(same size, time and content/)).toBeTruthy();
+      const facts = within(details).getByLabelText('Scene facts');
+      expect(within(facts).getByText('3 (1 mesh, 1 light, 1 camera)')).toBeTruthy();
+      expect(within(facts).getByText(/12 triangles before modifiers/)).toBeTruthy();
+      expect(within(facts).getByText('image //tex/a.png')).toBeTruthy();
+      expect(fake.calls.find((c) => c.channel === 'blender:inspect')?.input).toEqual({ projectId: 'project-1', relativePath: 'art/chair.blend' }); // a relative path, never a program or flag
+      const runs = await within(card).findByRole('list', { name: 'Blender runs' });
+      expect(within(runs).getByText('Passed')).toBeTruthy();
+    });
+
+    it('shows a failed script run with its error, and an alert if the original file ever differs', async () => {
+      const user = await openIntegrations({}, {}, { outcome: 'failed', unchanged: false });
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      await user.click(await within(card).findByRole('button', { name: 'Inspect art/chair.blend' }));
+      const runs = await within(card).findByRole('list', { name: 'Blender runs' });
+      expect(within(runs).getByText('Failed')).toBeTruthy();
+      expect(within(runs).getByRole('alert').textContent).toContain('The original file is different after this run');
+      expect(within(card).getAllByText("KeyError: 'Nope'").length).toBeGreaterThan(0);
+    });
+
+    it('opens a scene by relative path only', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      await user.click(await within(card).findByRole('button', { name: 'Open art/chair.blend in Blender' }));
+      expect(blender.opened).toEqual(['art/chair.blend']);
+      expect(fake.calls.find((c) => c.channel === 'blender:open')?.input).toEqual({ projectId: 'project-1', relativePath: 'art/chair.blend' });
+      expect(await screen.findByText(/Handed to Windows. Blender now runs on its own/)).toBeTruthy();
+    });
+
+    it('offers Run only after a script is approved, runs it on the chosen scene, and takes the approval back', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      const scripts = await within(card).findByRole('list', { name: 'Blender scripts' });
+      expect(within(scripts).queryByRole('button', { name: 'Run tools/export.py' })).toBeNull();
+      await user.click(within(scripts).getByRole('button', { name: 'Approve tools/export.py' }));
+      await user.selectOptions(await within(scripts).findByLabelText('Scene to run tools/export.py on'), 'art/room.blend');
+      await user.click(within(scripts).getByRole('button', { name: 'Run tools/export.py' }));
+      expect(fake.calls.find((c) => c.channel === 'blender:runApproved')?.input).toEqual({ projectId: 'project-1', scriptPath: 'tools/export.py', relativePath: 'art/room.blend' });
+      expect(await within(card).findByText('out/report.txt')).toBeTruthy();
+      expect(within(card).getByText(/Nothing is copied into your project/)).toBeTruthy();
+      await user.click(within(scripts).getByRole('button', { name: 'Take back the approval of tools/export.py' }));
+      await waitFor(() => expect(within(scripts).queryByRole('button', { name: 'Run tools/export.py' })).toBeNull());
+    });
+
+    it('tracks a scene, shows it as tracked, and stops tracking without touching the file', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      await user.click(await within(card).findByRole('button', { name: 'Track art/chair.blend' }));
+      const tracked = await within(card).findByRole('list', { name: 'Tracked assets' });
+      expect(within(tracked).getByText('art/chair.blend')).toBeTruthy();
+      expect(within(tracked).getByText('Unchanged')).toBeTruthy();
+      await user.click(within(tracked).getByRole('button', { name: 'Stop tracking art/chair.blend' }));
+      await waitFor(() => expect(within(card).queryByRole('list', { name: 'Tracked assets' })).toBeNull());
+      expect(within(card).getByRole('button', { name: 'Track art/chair.blend' })).toBeTruthy();
+    });
+
+    it('writes a brief with a live naming check for the chosen engine, and shows import notes for it', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Blender' });
+      const form = await within(card).findByLabelText('New asset brief');
+      await user.type(within(form).getByLabelText('Asset name'), 'wooden chair');
+      expect(within(form).getByLabelText('Naming check').textContent).toContain('SM_WoodenChair');
+      expect(within(form).getByLabelText('Naming check').textContent).toContain('Epic');
+      await user.selectOptions(within(form).getByLabelText('Target engine'), 'godot');
+      expect(within(form).getByLabelText('Naming check').textContent).toContain('wooden_chair');
+      await user.type(within(form).getByLabelText('Scale'), '0.9 m high');
+      await user.click(within(form).getByRole('button', { name: 'Save brief' }));
+      const list = await within(card).findByRole('list', { name: 'Asset briefs' });
+      expect(within(list).getByText('wooden chair')).toBeTruthy();
+      expect(fake.calls.find((c) => c.channel === 'briefs:save')?.input).toMatchObject({ projectId: 'project-1', fields: { name: 'wooden chair', engine: 'godot', scale: '0.9 m high' } });
+      await user.click(within(list).getByRole('button', { name: 'Write import notes for wooden chair' }));
+      const notes = await within(card).findByLabelText('Import handoff notes');
+      expect((within(notes).getByLabelText<HTMLTextAreaElement>('Handoff text')).value).toContain('Import handoff: wooden chair');
+      expect(within(notes).getByText(/from the brief only/)).toBeTruthy();
     });
 
     it('turns a risk flag into an entry in the risks register only when you press the button', async () => {

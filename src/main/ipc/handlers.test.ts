@@ -21,7 +21,7 @@ import { createGitOps } from '../git';
 import { createDiagnosticsService } from '../diagnostics';
 import { createAttention, createSessionService } from '../sessions';
 import { createRetention } from '../logging';
-import { createEngineService, createProfileService } from '../engines';
+import { createAssetService, createBlenderService, createEngineService, createProfileService } from '../engines';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -98,6 +98,8 @@ async function setup() {
   const diagnostics = createDiagnosticsService({ db, activity, redactor, logDir: join(dir, 'logs'), appInfo: () => ({ name: 'T' }), settings: () => settings.all(), providers: () => providers.list(), resources: () => undefined, chooseFile: () => Promise.resolve(saveTo.path) });
   const retention = createRetention({ db, activity, logger, logDir: join(dir, 'logs'), settings: () => ({ activityDays: 180, processRunDays: 60, sessionDays: 365, usageDays: 730, logFiles: 5 }) });
   const engines = createEngineService({ db, projects, runner: noGit, activity, permissions, confirm: confirmUi, logger, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({ SystemRoot: 'C:\\nowhere', ProgramData: 'C:\\nowhere', ProgramFiles: 'C:\\nowhere' }) });
+  const assets = createAssetService({ db, projects, activity });
+  const blender = createBlenderService({ db, projects, runner: noGit, activity, permissions, assets, confirm: confirmUi, logger, redactor, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({ ProgramFiles: 'C:\\nowhere' }), workRoot: join(dir, 'blender-work') });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
     execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write, onText: r.onText }),
@@ -149,6 +151,8 @@ async function setup() {
     retention,
     engines,
     profiles: createProfileService({ db, projects, activity }),
+    blender,
+    assets,
     resourcesLatest: () => null,
     resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,

@@ -4,6 +4,7 @@ import { CAPABILITY_LABELS, type OpenTarget, type UnrealView } from '@shared/unr
 import { useNav } from '../../app/navigation';
 import { formatTime } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
+import { BlenderPanel } from '../blender/BlenderPanel';
 import { BackroomsProfile } from './BackroomsProfile';
 
 const mb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -248,6 +249,8 @@ export function EnginesPanel() {
           </div>
         )}
       </section>
+
+      <BlenderPanel />
 
       {selected !== undefined && <BackroomsProfile projectId={selected.id} projectName={selected.name} />}
     </section>

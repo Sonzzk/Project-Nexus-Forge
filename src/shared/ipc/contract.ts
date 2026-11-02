@@ -17,6 +17,7 @@ import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, 
 import { AttentionItemSchema, SessionSchema, SessionSummarySchema } from '../sessions';
 import { ProfilePatchSchema, ProfileViewSchema } from '../backrooms';
 import { OPEN_TARGETS, UnrealViewSchema } from '../unreal';
+import { BlenderRunDetailSchema, BlenderViewSchema, BriefFieldsSchema, BriefSchema, TrackedAssetSchema } from '../blender';
 import { ActivityExportRequestSchema, ActivityQuerySchema, FileExportResultSchema, LogsRequestSchema, LogsResultSchema } from '../diagnostics';
 import { ChangeSessionSchema, GitOverviewSchema, ReviewSchema } from '../changes';
 import { CommandResultSchema, PERMISSION_SCOPES, PermissionSchema, PermissionsViewSchema } from '../permissions';
@@ -69,6 +70,7 @@ import type { ChannelName } from './channels';
 // working directories (ARCHITECTURE.md section 6); a contract test enforces that by field name.
 
 const noInput = z.strictObject({});
+const BlenderFileRequest = z.strictObject({ projectId: z.string().max(64), relativePath: z.string().min(1).max(400) });
 
 export const AppInfoSchema = z.object({
   name: z.string(),
@@ -248,6 +250,27 @@ export const contract = {
   'engines:open': { request: z.strictObject({ projectId: z.string().max(64), target: z.enum(OPEN_TARGETS) }), response: z.strictObject({ opened: z.boolean() }) },
   'engines:addPath': { request: noInput, response: z.strictObject({ added: z.boolean() }) },
   'engines:removePath': { request: z.strictObject({ index: z.number().int().min(0).max(19) }), response: z.strictObject({ removed: z.literal(true) }) },
+  // Blender and assets (Step 19). The page names a project and a project-relative path taken from what main listed; main resolves it
+  // inside the project, starts Blender only on a copy, and asks in a window before opening a scene or approving a script.
+  'blender:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: BlenderViewSchema },
+  'blender:addPath': { request: noInput, response: z.strictObject({ added: z.boolean() }) },
+  'blender:removePath': { request: z.strictObject({ index: z.number().int().min(0).max(19) }), response: z.strictObject({ removed: z.literal(true) }) },
+  'blender:open': { request: BlenderFileRequest, response: z.strictObject({ opened: z.boolean() }) },
+  'blender:inspect': { request: BlenderFileRequest, response: BlenderRunDetailSchema },
+  'blender:approveScript': { request: z.strictObject({ projectId: z.string().max(64), scriptPath: z.string().min(1).max(400) }), response: z.strictObject({ approved: z.boolean() }) },
+  'blender:revokeScript': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ revoked: z.literal(true) }) },
+  'blender:runApproved': { request: z.strictObject({ projectId: z.string().max(64), scriptPath: z.string().min(1).max(400), relativePath: z.string().min(1).max(400) }), response: BlenderRunDetailSchema },
+  'blender:run': { request: z.strictObject({ id: z.string().max(64) }), response: BlenderRunDetailSchema },
+  'blender:revealRun': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ opened: z.boolean() }) },
+  'assets:track': {
+    request: z.strictObject({ projectId: z.string().max(64), relativePath: z.string().min(1).max(400), note: z.string().max(500).optional(), tags: z.array(z.string().max(40)).max(20).optional() }),
+    response: TrackedAssetSchema,
+  },
+  'assets:untrack': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.literal(true) }) },
+  'briefs:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(BriefSchema) },
+  'briefs:save': { request: z.strictObject({ projectId: z.string().max(64), id: z.string().max(64).optional(), fields: BriefFieldsSchema }), response: BriefSchema },
+  'briefs:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.literal(true) }) },
+  'briefs:handoff': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ text: z.string().max(20_000), basedOnInspect: z.string().max(64).nullable() }) },
   'commands:history': {
     request: z.strictObject({ projectId: z.string().max(64) }),
     response: z.array(z.strictObject({ id: z.string(), label: z.string(), startedAt: z.string(), endedAt: z.string().nullable(), status: z.string(), exitCode: z.number().nullable() })),

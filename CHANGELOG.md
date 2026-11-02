@@ -7,6 +7,16 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 19 · Blender integration (2026-11-02, tag `step-19`)
+
+### Added
+- Blender on the Integrations page: installs (folders you add, the usual install folders, PATH) with their version, the project's `.blend` scenes with the Blender version that saved each (a scene saved by a newer Blender than any installed one is marked) and the backup files beside them.
+- Inspect a scene in a headless Blender run: objects, triangles, materials, images, units and missing files. Every run works on a **copy** in the app's data folder and records whether the original is unchanged (size, time and content); nothing is written into your project.
+- Approve a Blender script from the project (you see its text; the approval is bound to it) and run it on a copy of a scene you choose. The output files, the error and the exit code are recorded for every run. Agents cannot run scripts.
+- Open a scene in Blender through Windows after a confirmation.
+- Track asset files (changed or missing is shown), write asset briefs with a naming check for Unreal, Godot, Unity or any engine, and write import notes from a brief and the last inspect.
+- A dashboard card, Assets and Blender. Schema v14, 16 channels; tracked assets and briefs join export. Decision D-044, known issue KI-023.
+
 ## Step 18 · Unreal Engine 5 integration (2026-11-02, tag `step-18`)
 
 ### Added

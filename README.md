@@ -30,7 +30,7 @@ npm run dev
 | `npm run build` | Build main, preload and renderer into `out/` |
 | `npm run typecheck` | Type-check all three TypeScript projects |
 | `npm run lint` | ESLint, including the import boundaries between main, preload and renderer |
-| `npm test` | Unit, integration and component tests (Vitest) |
+| `npm test` | Unit, integration and component tests (Vitest). Tests that need a real Blender run only if `GDCC_BLENDER_DIR` names a folder that contains `blender.exe` (or Blender is under `Program Files\Blender Foundation`); otherwise they are skipped and reported as skipped |
 | `npm run test:e2e` | Build, then run the end-to-end tests against the real Electron app (Playwright) |
 | `npm run check:docs` | Check the documents (spec hash, roadmap, requirements trace, dependency pins) and their tests |
 | `npm run format` | Format the code with Prettier |
