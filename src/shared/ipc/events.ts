@@ -6,6 +6,8 @@ import type { EventName } from './channels';
 export interface EventPayloads {
   'activity:appended': ActivityEvent;
   'providers:progress': PullProgress;
+  /** The answer of a running agent so far, with secrets removed (Step 17). */
+  'sessions:output': { runId: string; text: string };
 }
 
 export type EventPayloadOf<E extends EventName> = EventPayloads[E];

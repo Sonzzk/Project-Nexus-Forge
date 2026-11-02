@@ -13,7 +13,7 @@ import { createGitOps, createGitService } from './git';
 import { createEmitter, createIpc, registerHandlers } from './ipc';
 import { activityTable, createActivityLog, type ActivityLog } from './logging';
 import { createLogger } from './logging';
-import { createRedactor } from './logging';
+import { createRedactor, createRetention } from './logging';
 import { createProcessRunStore, createProcessRunner } from './process';
 import { createProjectRegistry, projectTables } from './projects';
 import { createClaudeCodeAdapter, createCodexAdapter, createOllamaAdapter, createProviderService, locateProgram, sandboxPath } from './providers';
@@ -22,6 +22,8 @@ import { createResourceMonitor } from './resources';
 import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { createChangeService, createOverviewService } from './changes';
+import { createDiagnosticsService } from './diagnostics';
+import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
@@ -298,15 +300,20 @@ async function startServices(): Promise<void> {
     cwd: userDataDir,
     logger: logger.child('resources'),
   });
-  const report = async (maxAgeMs = 0): Promise<ResourceReport> => {
-    const snapshot = await monitor.snapshot(maxAgeMs);
-    const verdict = evaluateLocal(snapshot, {
+  const reportOf = (snapshot: ResourceReport['snapshot']): ResourceReport => ({
+    snapshot,
+    verdict: evaluateLocal(snapshot, {
       mode: settingsStore.get('inference.mode'),
       minFreeVramMiB: settingsStore.get('inference.minFreeVramMiB'),
       minFreeRamMiB: settingsStore.get('inference.minFreeRamMiB'),
       holdForHeavyApps: settingsStore.get('inference.holdForHeavyApps'),
-    });
-    return { snapshot, verdict };
+    }),
+  });
+  const report = async (maxAgeMs = 0): Promise<ResourceReport> => reportOf(await monitor.snapshot(maxAgeMs));
+  /** The last check, without measuring again. */
+  const latestReport = (): ResourceReport | null => {
+    const snapshot = monitor.latest();
+    return snapshot === undefined ? null : reportOf(snapshot);
   };
 
   // Permissions, the pre-write gate and approved commands (Step 15). Grants come only from native windows opened here.
@@ -336,6 +343,10 @@ async function startServices(): Promise<void> {
     timeoutMs: () => settingsStore.get('safety.commandTimeoutSeconds') * 1000,
   });
 
+  // Session records of agent runs and what is waiting on the person (Step 17). Streamed text goes to the window as it arrives.
+  const sessions = createSessionService({ db, redactor, emit: (runId, text) => emit('sessions:output', { runId, text }) });
+  sessions.recover();
+
   // The run queue: routes runs, starts them in order, owns the writer lock. Runs that change files pass the gate first.
   const queue = createRunQueue({
     db,
@@ -344,7 +355,7 @@ async function startServices(): Promise<void> {
     projects,
     activity,
     logger: logger.child('queue'),
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write, onText: r.onText }),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => ({
@@ -358,10 +369,51 @@ async function startServices(): Promise<void> {
     recheckMs: () => settingsStore.get('inference.monitorIntervalSeconds') * 1000,
     confirm: (options) => ui.confirm(options),
     enforceLimits: (input) => providers.checkLaunch(input),
+    sessions,
     writes: gate,
     redact: (text) => redactor.redact(text),
   });
   queue.recover();
+  const attention = createAttention({
+    db,
+    projects,
+    queue,
+    resources: () => {
+      const latest = latestReport();
+      return latest === null ? undefined : { at: latest.snapshot.at, warnings: [...latest.verdict.blocks, ...latest.verdict.warnings] };
+    },
+  });
+  const diagnostics = createDiagnosticsService({
+    db,
+    activity,
+    redactor,
+    logDir: join(userDataDir, 'logs'),
+    appInfo: () => ({ ...appInfo() }),
+    settings: () => settingsStore.all(),
+    providers: () => providers.list(),
+    resources: () => monitor.latest(),
+    chooseFile: async ({ defaultName, kind }) => {
+      const box = { title: kind === 'csv' ? 'Export the activity history' : 'Save a file', defaultPath: join(app.getPath('documents'), defaultName), filters: [kind === 'csv' ? { name: 'CSV', extensions: ['csv'] } : { name: 'JSON', extensions: ['json'] }] };
+      const window = parent();
+      const result = window === undefined ? await dialog.showSaveDialog(box) : await dialog.showSaveDialog(window, box);
+      return result.canceled ? undefined : result.filePath;
+    },
+  });
+  const retention = createRetention({
+    db,
+    activity,
+    logger: logger.child('retention'),
+    logDir: join(userDataDir, 'logs'),
+    settings: () => ({
+      activityDays: settingsStore.get('retention.activityDays'),
+      processRunDays: settingsStore.get('retention.processRunDays'),
+      sessionDays: settingsStore.get('retention.sessionDays'),
+      usageDays: settingsStore.get('retention.usageDays'),
+      logFiles: settingsStore.get('retention.logFiles'),
+    }),
+  });
+  retention.start();
+  shutdown.register('retention', 22, () => retention.stop());
   const overview = createOverviewService({
     db,
     projects,
@@ -396,6 +448,11 @@ async function startServices(): Promise<void> {
     gate,
     changes,
     overview,
+    sessions,
+    attention,
+    diagnostics,
+    retention,
+    resourcesLatest: latestReport,
     resources: () => report(),
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),

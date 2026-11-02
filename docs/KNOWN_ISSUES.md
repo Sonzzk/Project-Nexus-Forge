@@ -77,7 +77,7 @@ Runs that change files could not start until Step 15; since then the writer lock
 
 ## KI-018 · Usage tracking limits (found in Step 14, accepted)
 
-The log records only what this app sent. Work done by running Claude Code or Codex in a terminal is invisible to it, and it cannot read a provider's remaining quota, so the launch limits are a safeguard on how often the app launches cloud work and do not predict when a provider will refuse. Usage appears only where the provider returned it: Claude Code (tokens and a cost estimate), Ollama (token counts) and Codex (token counts; read from the documented event, never run live because Codex is not installed on this PC). A failed or cancelled request has no usage even if the provider spent some. A Claude Code cost covers the whole conversation if a session were resumed; the app starts a new session for each run, so each row stands alone. Days are the local calendar day of this PC. The log is not trimmed automatically yet; Step 17 adds retention limits. Not proven live: a real cloud launch (no usage may be spent in tests); the end-to-end test uses a stand-in Ollama.
+The log records only what this app sent. Work done by running Claude Code or Codex in a terminal is invisible to it, and it cannot read a provider's remaining quota, so the launch limits are a safeguard on how often the app launches cloud work and do not predict when a provider will refuse. Usage appears only where the provider returned it: Claude Code (tokens and a cost estimate), Ollama (token counts) and Codex (token counts; read from the documented event, never run live because Codex is not installed on this PC). A failed or cancelled request has no usage even if the provider spent some. A Claude Code cost covers the whole conversation if a session were resumed; the app starts a new session for each run, so each row stands alone. Days are the local calendar day of this PC. The usage log is trimmed by the retention limit of Step 17 (730 days by default; 0 keeps everything). Not proven live: a real cloud launch (no usage may be spent in tests); the end-to-end test uses a stand-in Ollama.
 
 ## KI-019 · Safe execution limits (found in Step 15, accepted)
 
@@ -98,3 +98,13 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **Working trees are not used by runs yet.** They can be added and removed from the Git page, but an agent run still works in the project folder under the single-writer lock (D-041).
 - **Revert** refuses merge commits and a commit that is not in the current branch's history. A repository hook can still stop a commit or a revert; its message is shown.
 - **Not proven live:** the review was exercised on real Git repositories with a test double in place of the provider, not after a real Claude Code or Codex run.
+
+## KI-021 · Monitoring limits (found in Step 17, accepted)
+
+- **Live output is the provider's, as far as it streams.** Claude Code streams its answer (and the tool list and denials appear only when the run ends); Codex and Ollama runs show their answer when they finish or as their adapter delivers it. The page never claims more. No provider exposes reasoning, and none is shown.
+- **Tool and denial lists are only as good as the provider's events.** Claude Code's are parsed from its documented stream; Codex's command and file-change items are read tolerantly and were never seen from a real run (Codex is not installed here). A tool the agent used that the provider did not report is not listed.
+- **Not proven live:** a real Claude Code session record. The tests use recorded streams and the stand-in Ollama server.
+- **No in-app resume.** Claude Code's documented `--resume` is shown for use in a terminal; the app does not send a follow-up into an old conversation.
+- **Test output** is not recorded until Step 23.
+- **The attention list and the dashboard refresh on activity events**, not on a timer, so a resource warning is as old as the last check.
+- **Retention is by age only**, not by size; a very busy day can still add a lot of rows before the next daily prune. The log files keep their own 5 MB rotation.

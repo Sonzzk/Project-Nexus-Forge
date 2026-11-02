@@ -14,7 +14,7 @@ import { RunControls } from './RunControls';
 
 const gb = (mib: number | null): string => (mib === null ? 'unknown' : `${(mib / 1024).toFixed(1)} GB`);
 
-function QueueRow({ run, writesEnabled, maxAttempts, onChanged, onError }: { run: QueueEntry; writesEnabled: boolean; maxAttempts: number; onChanged: () => void; onError: (e: SerializedError) => void }) {
+export function QueueRow({ run, writesEnabled, maxAttempts, onChanged, onError }: { run: QueueEntry; writesEnabled: boolean; maxAttempts: number; onChanged: () => void; onError: (e: SerializedError) => void }) {
   const finished = FINAL_RUN_STATES.includes(run.state);
   return (
     <li className="queue-row" data-state={run.state}>

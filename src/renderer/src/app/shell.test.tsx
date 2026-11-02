@@ -11,6 +11,7 @@ import { attachProviders, emptyUsage, emptyWindow, sampleModel, sampleProvider, 
 import type { UsageRow } from '@shared/usage';
 import type { PermissionsView } from '@shared/permissions';
 import type { Review } from '@shared/changes';
+import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
@@ -480,6 +481,156 @@ describe('reviewing agent changes', () => {
     expect(await within(tools).findByText('gdcc/dash', { exact: false })).toBeTruthy();
     await user.click(within(tools).getByRole('button', { name: 'Remove the working tree dash' }));
     await waitFor(() => expect(within(tools).queryByRole('list', { name: 'Working trees' })).toBeNull());
+  });
+});
+
+describe('activity, live sessions, logs and the dashboard cards', () => {
+  let live: FakeSessions;
+  const event = (n: number, severity: 'info' | 'warning' | 'error', summary: string, kind = 'app.test'): ReturnType<typeof sampleEvent> => ({ ...sampleEvent(n), severity, summary, kind });
+  const openActivity = async (seed: Partial<FakeSessions> = {}, events = [event(1, 'info', 'Added Alpha', 'project.added'), event(2, 'warning', 'Claude Code was slow', 'provider.failed'), event(3, 'error', 'A run failed', 'agent.run-failed')]) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' }, events });
+    live = attachSessions(fake, seed);
+    attachPlanning(fake);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Activity and Logs/ }));
+    await screen.findByRole('heading', { name: 'Activity and Logs' });
+    return user;
+  };
+
+  it('filters the history by severity, text and time, and explains an empty result', async () => {
+    const user = await openActivity();
+    expect(await screen.findByText('A run failed')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: 'warning' }));
+    await waitFor(() => expect(screen.queryByText('Added Alpha')).toBeNull());
+    expect(fake.calls.filter((c) => c.channel === 'activity:list').at(-1)?.input).toMatchObject({ severities: ['warning'], limit: 200 });
+    expect(screen.getByText('Claude Code was slow')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: 'warning' }));
+    await user.type(screen.getByLabelText('Search'), 'agent.');
+    await waitFor(() => expect(screen.queryByText('Added Alpha')).toBeNull());
+    expect(screen.getByText('A run failed')).toBeTruthy();
+    await user.clear(screen.getByLabelText('Search'));
+    await user.type(screen.getByLabelText('Search'), 'no such thing');
+    expect(await screen.findByText('Nothing matches these filters.')).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText('When'), 'hour');
+    expect(fake.calls.filter((c) => c.channel === 'activity:list').at(-1)?.input).toMatchObject({ search: 'no such thing', since: expect.any(String) as unknown });
+  });
+
+  it('exports with the filters in force, the file chosen in main, and says when nothing was saved', async () => {
+    const user = await openActivity({ saveAnswer: false });
+    await user.click(screen.getByRole('checkbox', { name: 'error' }));
+    await user.click(screen.getByRole('button', { name: 'Export as CSV…' }));
+    expect(await screen.findByText('Nothing was saved.')).toBeTruthy();
+    expect(live.exported[0]).toEqual({ channel: 'activity:export', input: { format: 'csv', severities: ['error'] } }); // no path travels from the page
+    live.saveAnswer = true;
+    await user.click(screen.getByRole('button', { name: 'Export as JSON…' }));
+    expect(await screen.findByText(/Saved 3 entries\. Secrets and your user folder name were removed\./)).toBeTruthy();
+  });
+
+  it('shows a finished session with only observed facts, and says "Not exposed" for what Codex does not tell the app', async () => {
+    const codex = sampleRunSession({ runId: 'run-2', provider: 'codex', roleLabel: 'Documentation', taskTitle: 'Explain jumping', denials: [], tools: [], providerSessionId: null, exitCode: null, streamed: false, reviewSessionId: null, exposes: { streaming: false, toolEvents: true, denials: false, exitCode: true, sessionId: true }, resume: { documented: false, how: 'The app has not verified a documented way to resume a Codex run, so none is offered.' }, notes: ['This provider returns its answer only when it finishes, so nothing streams while it runs.'] });
+    const user = await openActivity({ sessions: [sampleRunSession(), codex] });
+    await user.click(screen.getByRole('tab', { name: 'Live sessions' }));
+    await user.click(await screen.findByRole('button', { name: 'Open the session of the Implementer for Add jumping' }));
+    const detail = await screen.findByRole('region', { name: 'Session' });
+    expect(within(detail).getAllByText('Completed')).toHaveLength(2); // the outcome and the workflow state
+    expect(within(detail).getByText('D:\\Games\\Alpha')).toBeTruthy();
+    expect(within(detail).getByText('sess-42')).toBeTruthy();
+    expect(within(await within(detail).findByRole('list', { name: 'Denied requests' })).getByText('npm test')).toBeTruthy();
+    expect(within(within(detail).getByRole('list', { name: 'Tools used' })).getByText('Edit')).toBeTruthy();
+    expect(within(detail).getByLabelText('Output').textContent).toContain('Could not run the tests.');
+    expect(within(detail).getByText(/claude --resume sess-42/)).toBeTruthy();
+    expect(within(detail).getByText(/Test output: runs do not report test results yet/)).toBeTruthy();
+    await user.click(within(detail).getByRole('button', { name: 'Review the changed files…' }));
+    expect(await screen.findByRole('heading', { name: 'Git and Changes' })).toBeTruthy();
+
+    await user.click(within(sidebar()).getByRole('button', { name: /^Activity and Logs/ }));
+    await user.click(screen.getByRole('tab', { name: 'Live sessions' }));
+    await user.click(await screen.findByRole('button', { name: 'Open the session of the Documentation for Explain jumping' }));
+    const second = await screen.findByRole('region', { name: 'Session' });
+    expect(within(second).getAllByText(/Not exposed by this provider/).length).toBeGreaterThanOrEqual(1); // denied requests
+    expect(within(second).getByText('This run could not change files, so none are recorded.')).toBeTruthy();
+    expect(within(second).getByText(/has not verified a documented way to resume a Codex run/)).toBeTruthy();
+  });
+
+  it('shows the answer of a running session as it streams, and never a state the provider did not report', async () => {
+    const running = sampleRunSession({ outcome: 'running', runState: 'running', endedAt: null, exitCode: null, providerSessionId: null, denials: [], tools: [], output: '', streamed: false, summary: '', reviewSessionId: null, processes: [], recent: [] });
+    const user = await openActivity({ sessions: [running] });
+    await user.click(screen.getByRole('tab', { name: 'Live sessions' }));
+    await user.click(await screen.findByRole('button', { name: 'Open the session of the Implementer for Add jumping' }));
+    const detail = await screen.findByRole('region', { name: 'Session' });
+    expect(within(detail).getAllByText('Running')).toHaveLength(2);
+    expect(within(detail).getByText('Nothing streamed yet.')).toBeTruthy();
+    expect(within(detail).getByText('Listed when the run ends.')).toBeTruthy();
+    expect(within(detail).getByText('Not finished')).toBeTruthy(); // the exit status is not guessed
+    act(() => fake.emit('sessions:output', { runId: 'run-1', text: 'Reading the player script…' }));
+    expect(await within(detail).findByLabelText('Output')).toBeTruthy();
+    expect(within(detail).getByLabelText('Output').textContent).toBe('Reading the player script…');
+    act(() => fake.emit('sessions:output', { runId: 'other-run', text: 'Not this one' }));
+    expect(within(detail).getByLabelText('Output').textContent).toBe('Reading the player script…');
+  });
+
+  it('shows the log, filters it by level and text, saves a diagnostics bundle and sets and applies the retention limits', async () => {
+    const user = await openActivity({
+      logs: { entries: [{ at: '2026-11-02T09:00:00.000Z', level: 'info', module: 'app.start', message: 'Started', data: '' }, { at: '2026-11-02T09:01:00.000Z', level: 'error', module: 'app.queue', message: 'Run failed', data: '{"code":"TOOL_FAILED"}' }], files: [{ name: 'main.log', bytes: 2048 }, { name: 'main.1.log', bytes: 1024 }] },
+    });
+    await user.click(screen.getByRole('tab', { name: 'Logs and diagnostics' }));
+    const table = await screen.findByRole('table', { name: 'Log lines' });
+    expect(within(table).getByText('Run failed')).toBeTruthy();
+    expect(screen.getByText(/main\.log \(2 KB\), main\.1\.log \(1 KB\)/)).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText('Level'), 'error');
+    await waitFor(() => expect(within(table).queryByText('Started')).toBeNull());
+    await user.selectOptions(screen.getByLabelText('Level'), '');
+    await user.type(screen.getByLabelText('Search', { selector: '#log-search' }), 'queue');
+    await waitFor(() => expect(within(table).queryByText('Started')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Save a diagnostics bundle…' }));
+    expect(await screen.findByText('The diagnostics bundle was saved.')).toBeTruthy();
+    expect(live.exported.at(-1)).toEqual({ channel: 'diagnostics:export', input: {} });
+
+    const keep = screen.getByLabelText('Activity history (days)');
+    await user.clear(keep);
+    await user.type(keep, '90');
+    expect(fake.calls.filter((c) => c.channel === 'settings:set').at(-1)?.input).toEqual({ key: 'retention.activityDays', value: 90 });
+    await user.click(screen.getByRole('button', { name: 'Clean up now' }));
+    expect(await screen.findByText('Removed 4 activity entries, 2 program records, 0 session records, 1 usage rows and 3 old log files.')).toBeTruthy();
+  });
+
+  it('the Resources tab measures only when asked', async () => {
+    const user = await openActivity();
+    await user.click(screen.getByRole('tab', { name: 'Resources' }));
+    expect(await screen.findByText('No check has been made since the app started.')).toBeTruthy();
+    expect(fake.calls.some((c) => c.channel === 'resources:check')).toBe(false);
+    attachProviders(fake); // brings the canned resource check
+    await user.click(screen.getByRole('button', { name: 'Check resources now' }));
+    expect(await screen.findByText('A local model may start')).toBeTruthy();
+    expect(screen.getByText(/NVIDIA GeForce RTX 3060/)).toBeTruthy();
+  });
+
+  it('the dashboard says what waits on you, opens the page that deals with it, and shows the last resource check without measuring', async () => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    live = attachSessions(fake, {
+      attention: [
+        { id: 'confirm-1', severity: 'warning', text: 'Alpha: a run is waiting for your answer in a confirmation window.', section: 'workbench', projectId: 'project-1' },
+        { id: 'review-1', severity: 'info', text: 'Alpha: the changes of an agent run are waiting for your review.', section: 'git', projectId: 'project-1' },
+      ],
+    });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' })); // the cards ask again when the dashboard opens
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const card = await screen.findByRole('region', { name: 'Needs your attention' });
+    expect(await within(card).findByText(/waiting for your answer in a confirmation window/)).toBeTruthy();
+    await user.click(within(card).getByRole('button', { name: /waiting for your review/ }));
+    expect(await screen.findByRole('heading', { name: 'Git and Changes' })).toBeTruthy();
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    const resources = await screen.findByRole('region', { name: 'Resources' });
+    expect(await within(resources).findByText(/No check since the app started/)).toBeTruthy();
+    expect(fake.calls.some((c) => c.channel === 'resources:check')).toBe(false);
+  });
+
+  it('says nothing is waiting when nothing is', async () => {
+    const user = await setup();
+    attachSessions(fake);
+    await user.click(within(sidebar()).getByRole('button', { name: 'Projects' }));
+    await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
+    expect(await screen.findByText('Nothing is waiting on you.')).toBeTruthy();
   });
 });
 

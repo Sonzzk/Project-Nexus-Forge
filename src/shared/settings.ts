@@ -47,6 +47,13 @@ export const SettingsSchema = z.object({
   'limits.cloudPerTask': z.number().int().min(0).max(1000).default(5),
   /** How long an approved project command may run before it is stopped. */
   'safety.commandTimeoutSeconds': z.number().int().min(10).max(3600).default(600),
+  /** Retention (spec §22): history older than this many days is deleted; 0 keeps it. Running work and open reviews are never deleted. */
+  'retention.activityDays': z.number().int().min(0).max(3650).default(180),
+  'retention.processRunDays': z.number().int().min(0).max(3650).default(60),
+  'retention.sessionDays': z.number().int().min(0).max(3650).default(365),
+  'retention.usageDays': z.number().int().min(0).max(3650).default(730),
+  /** Rotated log files kept next to the current one (each is up to 5 MB). */
+  'retention.logFiles': z.number().int().min(1).max(5).default(5),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */
   'context.defaultBudget': z.number().int().min(500).max(200_000).default(8000),
   /** Tasks (spec §10): ask for an approved plan before a task moves to In progress, and which view the Tasks page opens in. */

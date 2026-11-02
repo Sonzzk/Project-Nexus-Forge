@@ -41,6 +41,13 @@ const parseLines = (text: string): Record<string, unknown>[] =>
       }
     });
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** One line about a tool use: the command, the file or the pattern, whichever the provider named. */
+const toolDetail = (input: unknown): string => {
+  if (!isRecord(input)) return '';
+  for (const key of ['command', 'file_path', 'path', 'pattern', 'url']) if (typeof input[key] === 'string') return input[key].slice(0, 300);
+  return '';
+};
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 /** What went wrong, from the program's own words, with a way out for the common case of not being signed in. */
@@ -155,7 +162,15 @@ export function createClaudeCodeAdapter(options: CliOptions): ProviderAdapter {
       if (final['is_error'] === true || (result.exitCode !== 0 && result.exitCode !== null)) throw failure('Claude Code', text(final['result']) || result.stderrTail, result.exitCode, CLAUDE_SIGN_IN);
       const usage = final['usage'] as Record<string, unknown> | undefined;
       const parsed: Usage = { inputCount: num(usage?.['input_tokens']), outputCount: num(usage?.['output_tokens']), costUsdEstimate: num(final['total_cost_usd']) };
-      return { text: text(final['result']), usage: parsed };
+      // Only what the stream really contained: the session id, the tools the agent asked to use, and the requests Claude Code reports as denied.
+      const sessionId = text(final['session_id']) || text(events.find((event) => event['type'] === 'system' && event['subtype'] === 'init')?.['session_id']);
+      const tools = events.flatMap((event) => {
+        const content = (event['message'] as { content?: unknown } | undefined)?.content;
+        if (event['type'] !== 'assistant' || !Array.isArray(content)) return [];
+        return (content as Record<string, unknown>[]).filter((part) => part['type'] === 'tool_use').map((part) => ({ tool: text(part['name']).slice(0, 80), detail: toolDetail(part['input']) }));
+      });
+      const denials = (Array.isArray(final['permission_denials']) ? (final['permission_denials'] as unknown[]) : []).filter(isRecord).map((d) => ({ tool: text(d['tool_name']).slice(0, 80), detail: toolDetail(d['tool_input']) }));
+      return { text: text(final['result']), usage: parsed, observed: { ...(sessionId === '' ? {} : { sessionId }), exitCode: result.exitCode, ...(tools.length > 0 ? { tools: tools.slice(0, 200) } : {}), denials: denials.slice(0, 100) } };
     },
   };
 }
@@ -211,7 +226,20 @@ export function createCodexAdapter(options: CliOptions): ProviderAdapter {
       // Documented: each turn.completed event carries usage { input_tokens, output_tokens, ... } (learn.chatgpt.com/docs/non-interactive-mode, 2026-10-24). No cost is reported.
       const used = events.flatMap((event) => (event['type'] === 'turn.completed' && isRecord(event['usage']) ? [event['usage']] : []));
       const total = (key: string): number | null => (used.some((u) => num(u[key]) !== null) ? used.reduce((sum, u) => sum + (num(u[key]) ?? 0), 0) : null);
-      return { text: messages.join('\n'), usage: used.length === 0 ? null : { inputCount: total('input_tokens'), outputCount: total('output_tokens'), costUsdEstimate: null } };
+      // Item types other than agent_message are read tolerantly: the commands and file changes Codex lists, if it lists them.
+      const tools = events.flatMap((event) => {
+        const item = event['item'] as { type?: unknown; command?: unknown; changes?: unknown } | undefined;
+        if (event['type'] !== 'item.completed' || item === undefined) return [];
+        if (item.type === 'command_execution' && typeof item.command === 'string') return [{ tool: 'command', detail: item.command.slice(0, 300) }];
+        if (item.type === 'file_change' && Array.isArray(item.changes)) return (item.changes as unknown[]).filter(isRecord).map((c) => ({ tool: 'file change', detail: text(c['path']).slice(0, 300) }));
+        return [];
+      });
+      const threadId = text(events.find((event) => event['type'] === 'thread.started')?.['thread_id']);
+      return {
+        text: messages.join('\n'),
+        usage: used.length === 0 ? null : { inputCount: total('input_tokens'), outputCount: total('output_tokens'), costUsdEstimate: null },
+        observed: { ...(threadId === '' ? {} : { sessionId: threadId }), exitCode: result.exitCode, ...(tools.length > 0 ? { tools: tools.slice(0, 200) } : {}) },
+      };
     },
   };
 }

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess-42","model":"claude-test","tools":["Read","Edit","Bash"],"permissionMode":"manual"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I will edit the file."},{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"src/player.js","old_string":"a","new_string":"b"}}]},"session_id":"sess-42"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"npm test"}}]},"session_id":"sess-42"}
+{"type":"result","subtype":"success","is_error":false,"result":"Edited src/player.js. I could not run the tests.","session_id":"sess-42","total_cost_usd":0.05,"usage":{"input_tokens":900,"output_tokens":210},"permission_denials":[{"tool_name":"Bash","tool_use_id":"t2","tool_input":{"command":"npm test"}}]}

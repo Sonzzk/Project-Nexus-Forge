@@ -66,6 +66,8 @@ export interface AgentRequest {
   ownerId: string;
   /** The run's task, for the usage log and the per-task limit. */
   taskId: string | null;
+  /** The answer so far, while the provider streams it (Claude Code does). */
+  onText?: (text: string) => void;
   /** The run may change project files; the queue only sets this after the permission gate approved it. */
   write: boolean;
 }
@@ -78,6 +80,7 @@ interface RequestExtra {
   onApproved?: () => void;
   ownerId?: string;
   write?: boolean;
+  onText?: (text: string) => void;
   /** What the usage log and the launch limits attribute the request to. */
   projectId?: string;
   taskId?: string | null;
@@ -239,12 +242,12 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       extra.onApproved?.(); // the queue moves its run to running here; if that refuses, nothing is sent
       const usageId = usage.begin(launch);
       try {
-        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }), ...(extra.write === true ? { write: true } : {}) });
+        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }), ...(extra.write === true ? { write: true } : {}), ...(extra.onText === undefined ? {} : { onText: extra.onText }) });
         markSuccess(id);
         usage.finish(usageId, { status: 'completed', usage: output.usage });
         const truncated = output.text.length > MAX_OUTPUT;
         activity.record({ kind: 'provider.generated', severity: 'info', summary: `${label} answered a ${purpose.replace('-', ' ')} request (${output.text.length.toLocaleString('en-US')} characters).`, details: { provider: id, model: choice.model, purpose, promptChars: text.length, outputChars: output.text.length, usageReported: output.usage !== null } });
-        return { sent: true, text: truncated ? output.text.slice(0, MAX_OUTPUT) : output.text, provider: id, model: choice.model, elapsedMs: Date.now() - started, truncated, usage: output.usage };
+        return { sent: true, text: truncated ? output.text.slice(0, MAX_OUTPUT) : output.text, provider: id, model: choice.model, elapsedMs: Date.now() - started, truncated, usage: output.usage, ...(output.observed === undefined ? {} : { observed: output.observed }) };
       } catch (error) {
         const e = error instanceof AppError ? error : new AppError('TOOL_FAILED', `${label} failed.`, { cause: error, hint: 'Details are in the log.' });
         logger.warn('provider request failed', { provider: id, code: e.code, message: e.message });
@@ -367,9 +370,9 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', projectId, detail: inProject(p.rootPath, choice.provider) });
     },
 
-    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId, taskId, write }) {
+    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId, taskId, write, onText }) {
       const p = project(projectId);
-      const extra = { label: 'This agent run', signal, onApproved, ownerId, projectId, taskId, write };
+      const extra = { label: 'This agent run', signal, onApproved, ownerId, projectId, taskId, write, ...(onText === undefined ? {} : { onText }) };
       // Ollama only answers the text it is given; the coding agents run read-only in the project folder.
       if (choice.provider === 'ollama') return runRequest(choice, prompt, 'agent-run', { ...extra, detail: note });
       return runRequest(choice, prompt, 'agent-run', { ...extra, cwd: p.rootPath, detail: `${note}\n\n${inProject(p.rootPath, choice.provider, write)}` });

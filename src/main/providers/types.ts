@@ -1,4 +1,4 @@
-import type { Capabilities, OllamaModel, PullProgress, ProviderId, ProviderStatus, Usage } from '@shared/providers';
+import type { Capabilities, Observed, OllamaModel, PullProgress, ProviderId, ProviderStatus, Usage } from '@shared/providers';
 
 // The provider contract (spec §9). Every adapter implements `detect`; the rest is offered only when the provider really has it,
 // and `capabilities` says which. Nothing assumes two providers behave alike.
@@ -20,6 +20,8 @@ export interface GenerateRequest {
 export interface ProviderOutput {
   text: string;
   usage: Usage | null;
+  /** What the provider printed about the run besides its answer. Absent when it printed nothing of the kind. */
+  observed?: Observed;
 }
 
 export interface ProviderAdapter {

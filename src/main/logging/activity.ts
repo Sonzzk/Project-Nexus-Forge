@@ -107,6 +107,20 @@ export function createActivityLog(options: ActivityLogOptions): ActivityLog {
         where.push('occurred_at < ?');
         params.push(filter.before);
       }
+      if (filter.since !== undefined) {
+        where.push('occurred_at >= ?');
+        params.push(filter.since);
+      }
+      if (filter.severities !== undefined && filter.severities.length > 0) {
+        where.push(`severity IN (${filter.severities.map(() => '?').join(', ')})`);
+        params.push(...filter.severities);
+      }
+      if (filter.search !== undefined && filter.search.trim() !== '') {
+        // LIKE with the wildcards of the search text escaped, so a search for 100% or a_b finds those characters
+        where.push("(summary LIKE ? ESCAPE '\\' OR kind LIKE ? ESCAPE '\\')");
+        const pattern = `%${filter.search.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        params.push(pattern, pattern);
+      }
       const sql = `SELECT id, occurred_at, kind, severity, summary, project_id, task_id, details_json FROM activity_events${
         where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''
       } ORDER BY occurred_at DESC, rowid DESC LIMIT ?`;

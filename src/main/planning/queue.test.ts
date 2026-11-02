@@ -15,6 +15,7 @@ import { createProcessRunner, type ProcessRunner } from '../process';
 import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
 import { createUsageService } from '../usage';
+import { createSessionService } from '../sessions';
 import { createAgentService } from './agents';
 import { createRunQueue, type ExecuteRequest, type RunQueue } from './queue';
 import { createTaskService } from './tasks';
@@ -54,12 +55,13 @@ async function env(options: Options = {}) {
   };
   const limits = { perDay: 20, perProjectPerDay: 10, perTask: 5, maxAttempts: 3 };
   const usage = createUsageService({ db, activity, limits: () => limits, now });
+  const sessions = createSessionService({ db, redactor, now });
   const providers = createProviderService({ db, adapters, projects, activity, usage, logger, redactor, confirm, progress: () => undefined, ollamaEndpoint: () => 'http://127.0.0.1:11434', env: () => ({}), sandboxDir: () => 'C:\\Data\\provider-sandbox', now });
   const routing = { profile: 'balanced' as RoutingProfile, overrides: {}, localModel: 'llama3.2:1b', maxAttempts: 3, apiKeySet: false };
   const policy = { verdict: allowed };
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger, now, confirm,
-    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write })),
+    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write, onText: r.onText })),
     enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
@@ -68,6 +70,7 @@ async function env(options: Options = {}) {
     recheckMs: () => 20,
     ...(options.writesEnabled === true ? { writes: { precheck: () => undefined, authorize: () => Promise.resolve({ approved: true }) } } : {}),
     redact: (text) => redactor.redact(text),
+    sessions,
   });
   queues.push(queue);
   const newTask = (title: string, extra: { priority?: 'low' | 'normal' | 'high' | 'critical'; complexity?: 'xs' | 's' | 'm' | 'l' } = {}) =>
@@ -75,7 +78,7 @@ async function env(options: Options = {}) {
   // The ids of the queued runs, in step order. shortcut: typed as five so tests can destructure; they only read what they queued.
   const runOf = (taskId: string, workflow: 'plan' | 'implement' | 'documentation' = 'plan', extra: { includeReviewer?: boolean } = {}) =>
     agents.createWorkflow({ taskId, workflow, includeReviewer: extra.includeReviewer ?? false, includeQa: false }).map((run) => run.id) as [string, string, string, string, string];
-  return { db, dir, activity, projects, project, tasks, agents, adapters, providers, queue, confirms, answers, routing, policy, newTask, runOf, usage, limits };
+  return { db, dir, activity, projects, project, tasks, agents, adapters, providers, queue, confirms, answers, routing, policy, newTask, runOf, usage, limits, sessions };
 }
 
 const until = async (check: () => boolean, ms = 4000): Promise<void> => {
@@ -359,6 +362,62 @@ describe('bounded retries and approval', () => {
     await e.queue.start(run);
     await until(() => e.agents.get(run).state === 'failed');
     expect(await failure(e.queue.retry(run))).toMatchObject({ code: 'LIMIT_REACHED', message: expect.stringContaining('1 time,') as unknown });
+  });
+});
+
+describe('session records (Step 17)', () => {
+  it('a run that really started leaves a record: who, where, the streamed answer, the provider’s own report, and the end', async () => {
+    const e = await env();
+    e.adapters['claude-code'].answer = 'Plan: 1. input 2. physics';
+    e.adapters['claude-code'].observed = { sessionId: 'sess-7', exitCode: 0, tools: [{ tool: 'Read', detail: 'src/player.js' }], denials: [] };
+    const task = e.newTask('Add jumping');
+    const [run] = e.runOf(task.id);
+    await e.queue.start(run);
+    await until(() => e.agents.get(run).state === 'completed');
+    const s = e.sessions.get(run);
+    expect(s).toMatchObject({ outcome: 'completed', provider: 'claude-code', workingDir: e.project.rootPath, taskTitle: 'Add jumping', providerSessionId: 'sess-7', exitCode: 0, output: 'Plan: 1. input 2. physics', streamed: true });
+    expect(s.tools).toEqual([{ tool: 'Read', detail: 'src/player.js' }]);
+    expect(e.sessions.list(e.project.id)).toHaveLength(1);
+  });
+
+  it('a local model’s record says there is no folder and keeps no tool list it did not receive', async () => {
+    const e = await env();
+    const [run] = e.runOf(e.newTask('Docs').id, 'documentation');
+    await e.queue.start(run);
+    await until(() => e.agents.get(run).state === 'completed');
+    const s = e.sessions.get(run);
+    expect(s).toMatchObject({ provider: 'ollama', outcome: 'completed' });
+    expect(s.workingDir).toContain('None');
+    expect(s.tools).toEqual([]);
+    expect(s.providerSessionId).toBeNull();
+  });
+
+  it('a failed run is recorded with the reason, a cancelled one as cancelled', async () => {
+    const e = await env();
+    e.adapters['claude-code'].failWith = new AppError('TOOL_FAILED', 'Claude Code stopped with an error.');
+    const [failing] = e.runOf(e.newTask('Fails').id);
+    await e.queue.start(failing);
+    await until(() => e.agents.get(failing).state === 'failed');
+    expect(e.sessions.get(failing)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('stopped with an error') as unknown });
+
+    e.adapters['claude-code'].failWith = undefined;
+    e.adapters['claude-code'].hold = true;
+    const [held] = e.runOf(e.newTask('Held').id);
+    await e.queue.start(held);
+    await until(() => e.agents.get(held).state === 'planning' || e.agents.get(held).state === 'running');
+    expect(e.sessions.get(held)).toMatchObject({ outcome: 'running' });
+    await e.queue.cancel(held);
+    expect(e.sessions.get(held)).toMatchObject({ outcome: 'cancelled' });
+  });
+
+  it('a run that was never approved or never started has no session', async () => {
+    const e = await env();
+    e.answers.confirm = false;
+    const [declined] = e.runOf(e.newTask('Declined').id);
+    await e.queue.start(declined);
+    await until(() => e.agents.get(declined).note.startsWith('Not sent'));
+    expect(() => e.sessions.get(declined)).toThrow();
+    expect(e.sessions.list(e.project.id)).toEqual([]);
   });
 });
 

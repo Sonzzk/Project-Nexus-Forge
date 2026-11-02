@@ -88,7 +88,7 @@ async function env() {
   });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger, confirm, redact: (text) => redactor.redact(text), writes: gate,
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write, onText: r.onText }),
     enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),

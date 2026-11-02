@@ -72,7 +72,7 @@ describe('Claude Code: running', () => {
   it('runs non-interactively in plan (read-only) mode with the prompt on stdin, in the empty sandbox folder by default', async () => {
     const { adapter, runner } = claude(ok);
     const result = await adapter.generate(request({ model: 'sonnet' }));
-    expect(result).toEqual({ text: 'Here is the answer.', usage: { inputCount: 120, outputCount: 45, costUsdEstimate: 0.0123 } });
+    expect(result).toMatchObject({ text: 'Here is the answer.', usage: { inputCount: 120, outputCount: 45, costUsdEstimate: 0.0123 } });
     const spec = runner.started[0];
     expect(spec?.executable).toBe(CLAUDE);
     expect(spec?.args).toEqual(['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', '--model', 'sonnet']);
@@ -186,6 +186,39 @@ describe('Claude Code: runs that change files (Step 15)', () => {
   });
 });
 
+describe('what the providers print about a run (Step 17)', () => {
+  it('Claude Code: the session id, the tools it asked to use, and the requests it reports as denied — only what the stream contained', async () => {
+    const { adapter } = claude(() => ({ stdout: fixture('claude', 'stream-tools.jsonl') }), { exe: CLAUDE_EXE });
+    const result = await adapter.generate(request());
+    expect(result.observed).toEqual({
+      sessionId: 'sess-42',
+      exitCode: 0,
+      tools: [{ tool: 'Edit', detail: 'src/player.js' }, { tool: 'Bash', detail: 'npm test' }],
+      denials: [{ tool: 'Bash', detail: 'npm test' }],
+    });
+  });
+
+  it('Claude Code: a stream without tool events or denials reports none, not an empty claim', async () => {
+    const { adapter } = claude(() => ({ stdout: fixture('claude', 'stream-ok.jsonl') }), { exe: CLAUDE_EXE });
+    const result = await adapter.generate(request());
+    expect(result.observed).toEqual({ sessionId: 's1', exitCode: 0, denials: [] });
+    expect(result.observed).not.toHaveProperty('tools');
+  });
+
+  it('Codex: the thread id, and the commands and file changes it lists if it lists them', async () => {
+    const lines = [
+      '{"type":"thread.started","thread_id":"th-9"}',
+      '{"type":"item.completed","item":{"type":"command_execution","command":"npm test"}}',
+      '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"src/a.js","kind":"update"}]}}',
+      '{"type":"item.completed","item":{"type":"agent_message","text":"Done."}}',
+      '{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":1}}',
+    ].join('\n');
+    const { adapter } = codex(() => ({ stdout: lines }));
+    const result = await adapter.generate(request({ cwd: 'D:\\Games\\Alpha' }));
+    expect(result.observed).toEqual({ sessionId: 'th-9', exitCode: 0, tools: [{ tool: 'command', detail: 'npm test' }, { tool: 'file change', detail: 'src/a.js' }] });
+  });
+});
+
 describe('Codex CLI: runs that change files (Step 15)', () => {
   it('uses the workspace-write sandbox only for a writing run in a project folder', async () => {
     const { adapter, runner } = codex(() => ({ stdout: fixture('codex', 'exec-ok.jsonl') }));
@@ -217,7 +250,7 @@ describe('Codex CLI', () => {
     const { adapter, runner } = codex(() => ({ stdout: fixture('codex', 'exec-ok.jsonl') }));
     const result = await adapter.generate(request());
     // Step 14: the documented turn.completed usage is read; Codex reports no cost, so none is invented.
-    expect(result).toEqual({ text: 'Step one. Step two.', usage: { inputCount: 10, outputCount: 5, costUsdEstimate: null } });
+    expect(result).toMatchObject({ text: 'Step one. Step two.', usage: { inputCount: 10, outputCount: 5, costUsdEstimate: null } });
     expect(runner.started[0]?.args).toEqual(['exec', '--json', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '-']);
     expect(runner.started[0]?.stdin).toBe('Break this feature into steps');
     await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', model: 'gpt-test' }));
@@ -228,7 +261,7 @@ describe('Codex CLI', () => {
 
   it('leaves usage empty when the turn reports none, and sums the turns that do', async () => {
     const none = codex(() => ({ stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"Hi"}}\n{"type":"turn.completed"}\n' }));
-    expect(await none.adapter.generate(request())).toEqual({ text: 'Hi', usage: null });
+    expect(await none.adapter.generate(request())).toMatchObject({ text: 'Hi', usage: null });
     const two = codex(() => ({ stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"Hi"}}\n{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":1}}\n{"type":"turn.completed","usage":{"input_tokens":4}}\n' }));
     expect((await two.adapter.generate(request())).usage).toEqual({ inputCount: 7, outputCount: 1, costUsdEstimate: null });
   });

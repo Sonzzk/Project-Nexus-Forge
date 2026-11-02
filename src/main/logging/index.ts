@@ -8,3 +8,4 @@ export {
 } from './logger';
 export { createRedactor, type Redactor } from './redactor';
 export { activityTable } from './export';
+export { createRetention, type Retention, type RetentionResult, type RetentionSettings } from './retention';

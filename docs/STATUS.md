@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 16 · Diff review and code changes: done (2026-11-02, tag `step-16`)
-**Next step:** Step 17 · Activity logs and monitoring (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-17--activity-logs-and-monitoring).
+**Current step:** Step 17 · Activity logs and monitoring: done (2026-11-02, tag `step-17`)
+**Next step:** Step 18 · UE5 integration (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-18--ue5-integration).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -21,6 +21,7 @@
 - **Step 14.** The local usage log (`usage_log`: task, project, provider, model, times, status, and token counts or a cost estimate only when the provider returned them), launch limits per day, project and task checked before the confirmation, the Usage and limits section on the Integrations page and a dashboard card (ARCHITECTURE.md section 27, D-039). Verified by all six gates (below).
 - **Step 15.** Scoped permissions granted only through native windows, the pre-write gate with Git state, uncommitted-work warning and a checkpoint reference, approved commands bound to the script text, secret protection for agents, Git init, and write-capable Claude Code and Codex runs behind all of it (ARCHITECTURE.md section 28, D-040). Verified by all six gates (below); the first writing run was made on a throwaway project with a test double, not a provider.
 - **Step 16.** Change sessions against the checkpoint saved before each writing run, unified diffs with binary and secret-file handling, Commit, Reject (with a copy kept) and Revert, branches, named checkpoints with what Git cannot protect, and guarded working trees (ARCHITECTURE.md section 29, D-041). Verified by all six gates (below); reviewed on real Git repositories with a test double in place of the provider.
+- **Step 17.** The Activity and Logs page (filtered, searchable, redacted export; live sessions with only observed facts; the command queue; resources; the log, diagnostics bundle and retention limits), session records that survive a restart, and the dashboard cards Needs your attention and Resources (ARCHITECTURE.md section 30, D-042). Verified by all six gates (below).
 
 ## In progress
 - Nothing.
@@ -30,7 +31,7 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 17: the Activity and Logs page with filters, search and redacted export; the live session view (only observed facts, labeled where the provider exposes nothing); the command queue view; a resource panel and dashboard warnings; outstanding approvals on the dashboard; log retention limits (the usage log has none yet, KI-018) and a redacted diagnostics bundle. It builds on the queue, the resource monitor, the approvals log and the change sessions.
+- Step 18: the Unreal Engine 5 adapter behind the shared ProjectIntegration interface: `.uproject` and EngineAssociation, installed engines (verify where the launcher and source builds register them), Source, Config, Content and Plugins folders, open the project and folders, editor and build launches only through the Step 15 gate, build and automation logs, Unreal context for packs, planning templates, the opt-in editor-automation stance, the Backrooms profile (read-only) and a capability report. Approved commands and the permission gate (Step 15), the process runner and the session and log views (Step 17) are what it builds on.
 
 ## Application feature status
 The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
@@ -59,6 +60,15 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 17
+- **Requested:** an Activity and Logs page with filters, search and redacted export; a live session page with the §15 fields showing only observed facts and labeling what a provider does not expose, with session metadata that persists and resume only where documented; a command queue view with priorities and cancel; a resource panel and dashboard warnings; outstanding approvals on the dashboard; log retention limits and a redacted diagnostics bundle.
+- **Changed:** `src/main/sessions/` (session records, the attention list), `src/main/diagnostics/`, `src/main/logging/retention.ts`, activity filters in `ActivityLog.list`, observed data in the Claude Code and Codex adapters (`ProviderOutput.observed`), streamed text through `ProviderService.runAgent` and the queue, migration `0012_sessions.sql`, nine channels and the `sessions:output` event, five `retention.*` settings, the Activity page tabs and the dashboard cards Needs your attention and Resources, `test/mocks/fake-sessions.ts`, `test/e2e/activity.e2e.ts`; ARCHITECTURE.md section 30, D-042, KI-021, DATA.md, CHANGELOG and this file.
+- **Verified (2026-11-02):** `npm run typecheck`, `lint`, `test` (1087 of 1087), `build`, `check:docs` and `test:e2e` (49 of 49, including a local run's session before and after a restart, redacted exports to files chosen in a native window, the log, a diagnostics bundle and the retention limits in the real app). No provider was called and no usage was spent.
+- **Unfinished:** nothing in Step 17 except what KI-021 lists: no in-app resume, no test output until Step 23, retention by age only. A real Claude Code session record has not been seen.
+- **Known risks:** the Codex command and file-change items are read tolerantly and unverified; the attention list is as fresh as the last activity event or resource check.
+- **Relevant files:** `src/main/sessions/service.ts`, `src/main/diagnostics/service.ts`, `src/main/logging/retention.ts`, `src/renderer/src/features/activity/`.
+- **Next task:** Step 18 · UE5 integration.
 
 ## Handoff: Step 16
 - **Requested:** change tracking per session against a recorded base; unified diffs for text files and sizes plus a notice for binaries; approve (commit), reject (restore only the session's files after confirmation, keeping other uncommitted work) and revert (`git revert`, never reset); named checkpoints and a warning that Git may not protect large binaries (Git LFS detected); optional worktrees created and removed only with approval and tied to the writer lock; the Git and Changes page with status, branches and recent commits.

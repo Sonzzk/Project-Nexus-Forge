@@ -18,6 +18,9 @@ import { createUsageService } from '../usage';
 import { createCommandService, createPermissionService, createWriteGate } from '../security';
 import { createChangeService, createOverviewService } from '../changes';
 import { createGitOps } from '../git';
+import { createDiagnosticsService } from '../diagnostics';
+import { createAttention, createSessionService } from '../sessions';
+import { createRetention } from '../logging';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -36,6 +39,7 @@ let revealed: string[] = [];
 const mocks = {} as { ollama: ReturnType<typeof createMockProvider>; claude: ReturnType<typeof createMockProvider> };
 const uiCalls: string[] = [];
 let uiAnswer = true;
+const saveTo: { path: string | undefined } = { path: undefined };
 
 async function setup() {
   const { db, dir } = await openMigratedDb();
@@ -89,9 +93,12 @@ async function setup() {
   const gitOps = createGitOps({ runner: noGit, locate: () => undefined });
   const changes = createChangeService({ db, projects, git: gitOps, permissions, activity, redactor, confirm: confirmUi, backupDir: join(dir, 'rejected') });
   const overview = createOverviewService({ db, projects, git: gitOps, gitService: git, permissions, activity, confirm: confirmUi, worktreeDir: join(dir, 'worktrees'), writerLocked: () => false });
+  const sessions = createSessionService({ db, redactor });
+  const diagnostics = createDiagnosticsService({ db, activity, redactor, logDir: join(dir, 'logs'), appInfo: () => ({ name: 'T' }), settings: () => settings.all(), providers: () => providers.list(), resources: () => undefined, chooseFile: () => Promise.resolve(saveTo.path) });
+  const retention = createRetention({ db, activity, logger, logDir: join(dir, 'logs'), settings: () => ({ activityDays: 180, processRunDays: 60, sessionDays: 365, usageDays: 730, logFiles: 5 }) });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write, onText: r.onText }),
     enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
@@ -134,6 +141,11 @@ async function setup() {
     gate,
     changes,
     overview,
+    sessions,
+    attention: createAttention({ db, projects, queue, resources: () => undefined }),
+    diagnostics,
+    retention,
+    resourcesLatest: () => null,
     resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,
     reveal: (full) => void revealed.push(full),
@@ -491,6 +503,23 @@ describe('agent channels', () => {
     expect(await call('commands:run', { id: 'x', command: 'rm -rf /' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     uiAnswer = false;
     expect(await call('git:init', { projectId })).toMatchObject({ ok: true, value: { created: false } });
+  });
+
+  it('activity, logs, diagnostics and sessions: filters are validated, exports ask where to save and write nothing when cancelled, and an unknown run has no session', async () => {
+    const { call } = await withTask();
+    expect(await call('activity:list', { limit: 5, severities: ['error'], search: 'x', since: '2026-11-01T00:00:00.000Z' })).toMatchObject({ ok: true });
+    expect(await call('activity:list', { limit: 5, severities: ['fatal'] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('activity:list', { limit: 5, search: 'x'.repeat(101) })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('activity:export', { format: 'json' })).toMatchObject({ ok: true, value: { saved: false, count: 0 } });
+    expect(await call('activity:export', { format: 'xml' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('activity:export', { format: 'csv', path: 'C:\\x.csv' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('diagnostics:export')).toMatchObject({ ok: true, value: { saved: false } });
+    expect(await call('logs:tail', { lines: 10 })).toMatchObject({ ok: true, value: { entries: [] } });
+    expect(await call('logs:tail', { lines: 5000 })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('sessions:get', { runId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await call('attention:summary')).toMatchObject({ ok: true, value: [] });
+    expect(await call('resources:latest')).toMatchObject({ ok: true, value: null });
+    expect(await call('retention:run')).toMatchObject({ ok: true, value: { activity: 0 } });
   });
 
   it('reviewing changes: sessions are listed per project, unknown ones are refused, and a request names a session or a full commit id, never a file', async () => {

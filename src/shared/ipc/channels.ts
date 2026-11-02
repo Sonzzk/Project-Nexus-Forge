@@ -7,6 +7,9 @@ export const CHANNELS = [
   'settings:get',
   'settings:set',
   'activity:list',
+  'activity:export',
+  'logs:tail',
+  'diagnostics:export',
   'projects:list',
   'projects:pickAndAdd',
   'projects:update',
@@ -70,6 +73,11 @@ export const CHANNELS = [
   'queue:releaseLock',
   'resources:check',
   'usage:summary',
+  'sessions:list',
+  'sessions:get',
+  'attention:summary',
+  'resources:latest',
+  'retention:run',
   'permissions:view',
   'permissions:request',
   'permissions:revoke',
@@ -105,7 +113,7 @@ export const CHANNELS = [
   'storage:applyImport',
 ] as const;
 
-export const EVENTS = ['activity:appended', 'providers:progress'] as const;
+export const EVENTS = ['activity:appended', 'providers:progress', 'sessions:output'] as const;
 
 export type ChannelName = (typeof CHANNELS)[number];
 export type EventName = (typeof EVENTS)[number];

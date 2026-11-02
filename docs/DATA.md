@@ -47,6 +47,9 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `approved_commands` | 10 | project (cascade), label, argument array, hash of the script text, destructive flag, time approved, time taken back | A command you approved. A changed script is not run. Not exported. |
 | `change_sessions` | 11 | project (cascade), task, run, role, the commit before the run, the checkpoint commit and reference, what was untracked or modified at the start, time, status (open, approved, rejected), the commit made | One per approved writing run, so its changes can be reviewed against the right base. Not exported: it points at commits on this PC. |
 | `worktrees` | 11 | project (cascade), name, folder, branch, time created, time removed | The linked working trees this app created, so it removes only its own. Not exported. |
+| `run_sessions` | 12 | run (cascade), project (cascade), provider, model, working folder, times, outcome, exit code, the provider's session id, denied requests, tools used, error, answer (redacted, last 40 KB), whether it streamed | The record of an agent run that really started, kept after the run. Deleted after `retention.sessionDays`. Not exported. |
+
+History is trimmed by the retention limits (Settings keys `retention.*`; see ARCHITECTURE.md section 30): `activity_events`, finished `process_runs`, `run_sessions` and `usage_log` rows older than their limit, and rotated log files beyond the count.
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 

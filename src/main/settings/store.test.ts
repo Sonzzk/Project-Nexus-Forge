@@ -52,6 +52,11 @@ describe('settings schema', () => {
       'limits.cloudPerProjectPerDay': 10,
       'limits.cloudPerTask': 5,
       'safety.commandTimeoutSeconds': 600,
+      'retention.activityDays': 180,
+      'retention.processRunDays': 60,
+      'retention.sessionDays': 365,
+      'retention.usageDays': 730,
+      'retention.logFiles': 5,
     });
   });
 

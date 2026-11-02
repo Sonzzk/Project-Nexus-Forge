@@ -21,6 +21,11 @@ export type ActivityEvent = z.output<typeof ActivityEventSchema>;
 export interface ActivityFilter {
   projectId?: string | undefined;
   kinds?: readonly string[] | undefined;
+  severities?: readonly ActivitySeverity[] | undefined;
+  /** Matches the summary and the kind, any case. */
+  search?: string | undefined;
+  /** Only events at or after this ISO time. */
+  since?: string | undefined;
   /** Only events strictly older than this ISO time. */
   before?: string | undefined;
   limit: number;

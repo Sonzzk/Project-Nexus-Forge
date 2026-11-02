@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { FINAL_RUN_STATES, RUN_STATE_LABELS, roleById, type AgentRoleId, type AgentRun, type QueueView, type RunState } from '@shared/agents';
 import { AppError } from '@shared/errors';
-import { PROVIDER_LABELS, type ProviderChoice, type ProviderId } from '@shared/providers';
+import { PROVIDER_LABELS, PROVIDER_LOCATION, type Observed, type ProviderChoice, type ProviderId } from '@shared/providers';
 import type { PolicyVerdict } from '@shared/resources';
 import { PROFILE_LABELS, chooseRoute, escalationNotes, type Availability, type RoleOverride, type Route, type RoutingProfile } from '@shared/routing';
 import { PRIORITIES, type Priority } from '@shared/tasks';
 import type { ActivityLog, Logger } from '../logging';
 import type { ProjectRegistry } from '../projects';
+import type { SessionRecorder } from '../sessions';
 import type { Db } from '../storage';
 import { runFromRow, type AgentService, type RunRow } from './agents';
 import type { TaskService } from './tasks';
@@ -48,6 +49,8 @@ export interface ExecuteRequest {
   signal: AbortSignal;
   /** Call after the person approved (or nothing needed approval) and before the provider is called. */
   onApproved: () => void;
+  /** The answer so far, if the provider streams it. */
+  onText: (text: string) => void;
 }
 
 export interface RunQueueOptions {
@@ -58,7 +61,9 @@ export interface RunQueueOptions {
   activity: ActivityLog;
   logger: Logger;
   /** Sends one run to its provider and resolves with its answer; `sent: false` when the person declined. */
-  execute: (request: ExecuteRequest) => Promise<{ sent: boolean; text: string; truncated: boolean }>;
+  execute: (request: ExecuteRequest) => Promise<{ sent: boolean; text: string; truncated: boolean; observed?: Observed | undefined }>;
+  /** Keeps the session record of each run that really started (Step 17). */
+  sessions?: SessionRecorder;
   availability: () => Promise<Availability>;
   /** What is using a provider outside the queue (a test prompt on the Integrations page), if anything. */
   providerBusy: (provider: ProviderId) => string | undefined;
@@ -289,7 +294,9 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
           onApproved: () => {
             agents.transition(run.id, run.role === 'planner' ? 'planning' : 'running', `Started with ${label}${route.model === '' ? '' : ` (${route.model})`}.`);
             entry.approved = true;
+            options.sessions?.begin({ runId: run.id, projectId: run.projectId, provider, model: route.model, workingDir: PROVIDER_LOCATION[provider] === 'local' ? 'None: a local model only receives the task text.' : project.rootPath });
           },
+          onText: (text) => options.sessions?.output(run.id, text),
         });
         if (!result.sent) {
           setNote(run.id, `Not sent: you declined sending it to ${label}. It stays queued; start it again when you want.`);
@@ -297,6 +304,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
           return;
         }
         db.run('UPDATE agent_runs SET result = ? WHERE id = ?', options.redact(result.text).slice(0, MAX_RESULT), run.id);
+        options.sessions?.finish(run.id, { outcome: 'completed', text: result.text, truncated: result.truncated, observed: result.observed });
         finish(run.id, 'completed', `Finished with ${label}: ${result.text.length.toLocaleString('en-US')} characters${result.truncated ? ', cut at the limit' : ''}.`);
       } catch (error) {
         const e = error instanceof AppError ? error : new AppError('INTERNAL', 'The run stopped unexpectedly.', { cause: error, hint: 'Details are in the log.' });
@@ -305,7 +313,10 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
         if (!entry.approved) {
           setNote(run.id, `Could not start: ${text}`);
           activity.record({ kind: 'agent.run-not-started', severity: 'warning', summary: `The ${roleLabel(run.role)} run could not start: ${e.message}`.slice(0, 500), projectId: run.projectId, details: { runId: run.id, code: e.code } });
-        } else finish(run.id, e.code === 'CANCELLED' ? 'cancelled' : 'failed', text);
+        } else {
+          options.sessions?.finish(run.id, { outcome: e.code === 'CANCELLED' ? 'cancelled' : 'failed', error: text });
+          finish(run.id, e.code === 'CANCELLED' ? 'cancelled' : 'failed', text);
+        }
       } finally {
         active.delete(run.id);
         if (locked) releaseWriter(run.projectId, run.id);

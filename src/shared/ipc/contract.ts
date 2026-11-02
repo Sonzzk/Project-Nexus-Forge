@@ -14,6 +14,8 @@ import {
   PackSummarySchema,
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import { AttentionItemSchema, SessionSchema, SessionSummarySchema } from '../sessions';
+import { ActivityExportRequestSchema, ActivityQuerySchema, FileExportResultSchema, LogsRequestSchema, LogsResultSchema } from '../diagnostics';
 import { ChangeSessionSchema, GitOverviewSchema, ReviewSchema } from '../changes';
 import { CommandResultSchema, PERMISSION_SCOPES, PermissionSchema, PermissionsViewSchema } from '../permissions';
 import { ResourceReportSchema } from '../resources';
@@ -95,15 +97,11 @@ export const contract = {
     request: z.strictObject({ key: z.enum(SETTING_KEYS), value: z.unknown() }),
     response: SettingsSchema,
   },
-  'activity:list': {
-    request: z.strictObject({
-      projectId: z.string().max(64).optional(),
-      kinds: z.array(z.string().min(1).max(100)).max(20).optional(),
-      before: z.iso.datetime().optional(),
-      limit: z.number().int().min(1).max(500).default(50),
-    }),
-    response: z.array(ActivityEventSchema),
-  },
+  'activity:list': { request: ActivityQuerySchema, response: z.array(ActivityEventSchema) },
+  // Export and diagnostics write a redacted file chosen in a native save window in main; the request carries no path.
+  'activity:export': { request: ActivityExportRequestSchema, response: FileExportResultSchema },
+  'logs:tail': { request: LogsRequestSchema, response: LogsResultSchema },
+  'diagnostics:export': { request: noInput, response: FileExportResultSchema },
   'projects:list': { request: noInput, response: z.array(ProjectSchema) },
   // The folder is chosen in a native dialog opened by main; the request carries no path. null means the user cancelled.
   'projects:pickAndAdd': {
@@ -208,6 +206,13 @@ export const contract = {
   // A fresh look at CPU, RAM, GPU and running editors, with the local-inference verdict. Nothing is changed.
   'resources:check': { request: noInput, response: ResourceReportSchema },
   // The local usage log (Step 14). Read-only: rows are written by main when a request is sent or a limit stops one.
+  // The live session view (Step 17): read-only. Streamed text arrives as the `sessions:output` event.
+  'sessions:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(SessionSummarySchema) },
+  'sessions:get': { request: z.strictObject({ runId: z.string().max(64) }), response: SessionSchema },
+  'attention:summary': { request: noInput, response: z.array(AttentionItemSchema) },
+  // The last resource check without measuring again; null when none was made since the app started.
+  'resources:latest': { request: noInput, response: ResourceReportSchema.nullable() },
+  'retention:run': { request: noInput, response: z.strictObject({ activity: z.number(), processRuns: z.number(), sessions: z.number(), usage: z.number(), logFiles: z.number() }) },
   'usage:summary': { request: z.strictObject({ projectId: z.string().max(64).optional() }), response: UsageSummarySchema },
   'usage:list': { request: UsageListRequestSchema, response: z.array(UsageRowSchema) },
   // Permissions and approved commands (Step 15). Nothing here grants anything by itself: a request opens a native window in main and

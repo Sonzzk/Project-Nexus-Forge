@@ -94,6 +94,20 @@ export const UsageSchema = z.object({
 });
 export type Usage = z.output<typeof UsageSchema>;
 
+export const ToolUseSchema = z.object({ tool: z.string().max(80), detail: z.string().max(300) });
+export type ToolUse = z.output<typeof ToolUseSchema>;
+
+/** What a provider printed about a run, beyond its answer. Absent fields were not printed. */
+export const ObservedSchema = z.object({
+  sessionId: z.string().max(200).optional(),
+  exitCode: z.number().int().nullable().optional(),
+  /** Permission requests the provider itself reported as denied. */
+  denials: z.array(ToolUseSchema).max(100).optional(),
+  /** Tools the agent asked to use (commands, file edits), as the provider reported them. */
+  tools: z.array(ToolUseSchema).max(200).optional(),
+});
+export type Observed = z.output<typeof ObservedSchema>;
+
 export const GenerateResultSchema = z.object({
   /** False when the user declined the confirmation that names the destination; nothing was sent. */
   sent: z.boolean(),
@@ -104,6 +118,8 @@ export const GenerateResultSchema = z.object({
   /** The output was cut because it was longer than the limit. */
   truncated: z.boolean(),
   usage: UsageSchema.nullable(),
+  /** Only for queued agent runs: what the provider printed about the run. */
+  observed: ObservedSchema.optional(),
 });
 export type GenerateResult = z.output<typeof GenerateResultSchema>;
 

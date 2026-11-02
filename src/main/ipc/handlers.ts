@@ -13,6 +13,10 @@ import type { StorageService } from '../storage';
 import type { UsageService } from '../usage';
 import type { CommandService, PermissionService, WriteGate } from '../security';
 import type { ChangeService, OverviewService } from '../changes';
+import type { DiagnosticsService } from '../diagnostics';
+import type { SessionService } from '../sessions';
+import type { AttentionItem } from '@shared/sessions';
+import type { Retention } from '../logging';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
 import type { Ipc } from './handle';
@@ -39,6 +43,12 @@ export interface HandlerServices {
   gate: WriteGate;
   changes: ChangeService;
   overview: OverviewService;
+  sessions: SessionService;
+  attention: { items(): AttentionItem[] };
+  diagnostics: DiagnosticsService;
+  retention: Retention;
+  /** The last resource check, without measuring again. */
+  resourcesLatest: () => ResourceReport | null;
   /** A fresh resource snapshot with the local-inference verdict. */
   resources: () => Promise<ResourceReport>;
   git: GitService;
@@ -188,6 +198,14 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
     return { revoked: true as const };
   });
   ipc.handle('commands:run', ({ id }) => services.commands.run(id));
+  ipc.handle('sessions:list', ({ projectId }) => services.sessions.list(projectId));
+  ipc.handle('sessions:get', ({ runId }) => services.sessions.get(runId));
+  ipc.handle('attention:summary', () => services.attention.items());
+  ipc.handle('resources:latest', () => services.resourcesLatest());
+  ipc.handle('retention:run', () => services.retention.prune());
+  ipc.handle('activity:export', ({ format, ...filter }) => services.diagnostics.exportActivity(filter, format));
+  ipc.handle('logs:tail', (request) => services.diagnostics.logs(request));
+  ipc.handle('diagnostics:export', () => services.diagnostics.bundle());
   ipc.handle('git:overview', ({ projectId }) => services.overview.overview(projectId));
   ipc.handle('git:checkpoint', ({ projectId, name }) => services.overview.checkpoint(projectId, name));
   ipc.handle('changes:sessions', ({ projectId }) => services.changes.sessions(projectId));

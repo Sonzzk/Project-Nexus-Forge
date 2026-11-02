@@ -7,6 +7,16 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 17 · Activity logs and monitoring (2026-11-02, tag `step-17`)
+
+### Added
+- The Activity and Logs page: the history with filters (severity, text, time, project) and a redacted export to JSON or CSV; live agent sessions with the command queue; resources; and the log with a diagnostics bundle and retention limits.
+- Session records of agent runs that survive a restart: provider and model, working directory, elapsed time, the answer as it streams, exit status, the provider's session id, the tools the agent asked to use and the requests it reports as denied, the app's own events about the run, and a link to its changed files. Whatever a provider does not tell the app is labeled "Not exposed by this provider" and nothing is guessed. Resume is shown only where the provider documents it (Claude Code's `--resume`).
+- Dashboard cards: Needs your attention (runs waiting for an answer, changes to review, interrupted locks, limits, resource warnings) and Resources (the last check; nothing is measured until you ask).
+- Retention limits for activity, program records, sessions, the usage log and old log files, and a "Clean up now" button.
+- A redacted diagnostics bundle for bug reports.
+- Schema v12, nine channels and one event, five settings. Decision D-042, known issue KI-021.
+
 ## Step 16 · Diff review and code changes (2026-11-02, tag `step-16`)
 
 ### Added

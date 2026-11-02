@@ -5,6 +5,8 @@ import { ROLE_LABELS, STATUS_LABELS } from '@shared/tasks';
 import { RUN_STATE_LABELS } from '@shared/agents';
 import { useQueue } from '../../lib/queue';
 import { describeUsage, limitText, useUsage } from '../../lib/usage';
+import type { AttentionItem } from '@shared/sessions';
+import { ResourceFacts, useResources } from '../ResourceFacts';
 import { formatTime } from '../../lib/activity';
 import { FEATURES, stateLabel, type FeatureStatus } from '@shared/feature-status';
 import { useNav } from '../../app/navigation';
@@ -138,6 +140,72 @@ function AgentSessionsCard() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** Everything that is waiting on the person, from state the app already keeps (spec §20: outstanding approvals, warnings). */
+function AttentionCard() {
+  const { go } = useNav();
+  const [items, setItems] = useState<AttentionItem[] | undefined>();
+  const [version, setVersion] = useState(0);
+  useEffect(() => window.api.on('activity:appended', () => setVersion((n) => n + 1)), []);
+  useEffect(() => {
+    let cancelled = false;
+    void window.api.invoke('attention:summary', {}).then((result) => {
+      if (!cancelled && result.ok) setItems(result.value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [version]);
+  return (
+    <section className="card" aria-label="Needs your attention" data-feature="card.attention">
+      <div className="card__head">
+        <h2>Needs your attention</h2>
+        <button type="button" className="btn" onClick={() => go('activity')}>
+          Open
+        </button>
+      </div>
+      {items === undefined && <p className="empty">Loading…</p>}
+      {items?.length === 0 && <p className="empty">Nothing is waiting on you.</p>}
+      <ul className="rows" aria-label="Items waiting">
+        {items?.map((item) => (
+          <li key={item.id}>
+            <button type="button" className="row row--card" onClick={() => go(item.section)}>
+              <span className="dot" data-severity={item.severity === 'warning' ? 'warning' : 'info'} />
+              <span className="row__summary">{item.text}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The last resource check. Nothing is measured here until the person asks. */
+function ResourcesCard() {
+  const { go } = useNav();
+  const { report, check, busy, error } = useResources();
+  return (
+    <section className="card" aria-label="Resources" data-feature="card.resources">
+      <div className="card__head">
+        <h2>Resources</h2>
+        <button type="button" className="btn" disabled={busy} onClick={() => void check()}>
+          {busy ? 'Checking…' : 'Check now'}
+        </button>
+      </div>
+      {error !== undefined && (
+        <p role="alert">
+          {error.message} {error.hint}
+        </p>
+      )}
+      {report.loaded && report.report === undefined && (
+        <p className="empty">
+          No check since the app started. <button type="button" className="btn" onClick={() => go('activity')}>Details</button>
+        </p>
+      )}
+      {report.loaded && report.report !== undefined && <ResourceFacts report={report.report} />}
     </section>
   );
 }
@@ -414,6 +482,8 @@ export function Dashboard() {
         <GitCard />
         <HandoffCard />
         <AgentSessionsCard />
+        <AttentionCard />
+        <ResourcesCard />
         <UsageCard />
         <CurrentTaskCard />
         <NextActionCard />
