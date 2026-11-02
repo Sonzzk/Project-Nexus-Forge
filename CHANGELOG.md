@@ -7,6 +7,18 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 16 · Diff review and code changes (2026-11-02, tag `step-16`)
+
+### Added
+- Review of what an agent changed: each approved writing run is recorded against the state saved just before it, so the list shows only the agent's changes, never your own earlier uncommitted work. Text files have unified diffs; binary files show their sizes and a notice; files that can hold secrets show no content and are never committed from here.
+- Commit (only those files, other staged work untouched), Reject (puts back only those files after a confirmation, keeping a copy of what was there first) and Revert (a new commit that undoes an old one; a conflict is aborted cleanly). Nothing uses reset, clean, a forced checkout or a history rewrite.
+- Branches, named checkpoints, and a plain warning about what Git cannot protect (untracked files, and large binary assets without Git LFS).
+- Separate Git working trees, added and removed only through confirmation windows, never while an agent is writing and never forced.
+- Schema v11, nine channels. Decision D-041, known issue KI-020.
+
+### Changed
+- The checkpoint before a writing run is always saved (the setting that could switch it off was removed): it is the base of the review.
+
 ## Step 15 · Safe execution and permissions (2026-11-02, tag `step-15`)
 
 ### Added

@@ -9,7 +9,7 @@ import { registerAppScheme, rendererRootFor, serveRenderer } from './app/protoco
 import { isRecoverable, runStartupRecovery } from './app/recovery';
 import { createShutdownCoordinator } from './app/shutdown';
 import { createMainWindow, installSecurityGuards, rendererDevServerUrl } from './app/window';
-import { createGitService } from './git';
+import { createGitOps, createGitService } from './git';
 import { createEmitter, createIpc, registerHandlers } from './ipc';
 import { activityTable, createActivityLog, type ActivityLog } from './logging';
 import { createLogger } from './logging';
@@ -21,6 +21,7 @@ import { agentTables, createAgentService, createPlanningService, createRunQueue,
 import { createResourceMonitor } from './resources';
 import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
+import { createChangeService, createOverviewService } from './changes';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
@@ -209,6 +210,7 @@ async function startServices(): Promise<void> {
     );
 
   const git = createGitService({ runner, logger: logger.child('git') });
+  const gitOps = createGitOps({ runner });
   const audits = createAuditService({
     db,
     projects,
@@ -309,6 +311,7 @@ async function startServices(): Promise<void> {
 
   // Permissions, the pre-write gate and approved commands (Step 15). Grants come only from native windows opened here.
   const permissions = createPermissionService({ db, projects, activity, confirm: (options) => ui.confirm(options) });
+  const changes = createChangeService({ db, projects, git: gitOps, permissions, activity, redactor, confirm: (options) => ui.confirm(options), backupDir: join(userDataDir, 'rejected-changes') });
   const gate = createWriteGate({
     git,
     projects,
@@ -319,7 +322,7 @@ async function startServices(): Promise<void> {
       const found = tasks.get(id);
       return { title: found.title, files: found.files };
     },
-    checkpoint: () => settingsStore.get('safety.checkpointBeforeWrites'),
+    sessions: changes,
   });
   const commands = createCommandService({
     db,
@@ -359,6 +362,17 @@ async function startServices(): Promise<void> {
     redact: (text) => redactor.redact(text),
   });
   queue.recover();
+  const overview = createOverviewService({
+    db,
+    projects,
+    git: gitOps,
+    gitService: git,
+    permissions,
+    activity,
+    confirm: (options) => ui.confirm(options),
+    worktreeDir: join(userDataDir, 'worktrees'),
+    writerLocked: (projectId) => queue.view(projectId).lock !== null,
+  });
   shutdown.register('agent-queue', 25, () => queue.shutdown());
 
   registerHandlers(ipc, {
@@ -380,6 +394,8 @@ async function startServices(): Promise<void> {
     permissions,
     commands,
     gate,
+    changes,
+    overview,
     resources: () => report(),
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),

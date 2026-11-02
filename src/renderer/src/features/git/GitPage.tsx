@@ -3,6 +3,8 @@ import type { GitSummary } from '@shared/audit';
 import type { SerializedError } from '@shared/errors';
 import { formatTime } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
+import { ChangesPanel } from './ChangesPanel';
+import { GitTools } from './GitTools';
 
 /** Read-only Git facts about one project: branch, uncommitted changes and recent commits (spec §7, §20). */
 export function useGitSummary(projectId: string | undefined): {
@@ -92,7 +94,7 @@ export function GitPage() {
       <header className="page__head">
         <h1>Git and Changes</h1>
         <p className="muted">
-          Branch, uncommitted changes and recent commits of the selected project (read-only; the only change offered here is creating a repository in a folder that has none). Diff review and revert
+          Branch, uncommitted changes and recent commits of the selected project (the status is read-only; the changes made here are creating a repository in a folder that has none, saving checkpoints, and the confirmed commit, reject and revert of an agent's changes). Diff review and revert
           arrive in Step 16.
         </p>
       </header>
@@ -131,6 +133,8 @@ export function GitPage() {
           {git === undefined && error === undefined && <p className="empty">Reading…</p>}
         </section>
       )}
+      {selected !== undefined && <ChangesPanel projectId={selected.id} onChanged={refresh} />}
+      {selected !== undefined && <GitTools projectId={selected.id} />}
     </div>
   );
 }

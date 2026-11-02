@@ -1,7 +1,7 @@
 import { AppError } from '@shared/errors';
 import type { GitSummary } from '@shared/audit';
 import type { ActivityLog } from '../logging';
-import type { GitService } from '../git';
+import type { Checkpoint, GitService } from '../git';
 import type { ProjectRegistry } from '../projects';
 import type { Confirm, PermissionService } from './permissions';
 
@@ -27,8 +27,8 @@ export interface WriteGateOptions {
   confirm: Confirm;
   /** The task's title and the files it says it will change. */
   task: (taskId: string) => { title: string; files: string[] } | undefined;
-  /** Save a checkpoint before a writing run (the default). */
-  checkpoint: () => boolean;
+  /** Opens a review session for the run from the checkpoint just saved (Step 16). */
+  sessions?: { begin(input: { runId: string; projectId: string; taskId: string | null; roleLabel: string; checkpoint: Checkpoint }): Promise<string> };
   now?: () => Date;
 }
 
@@ -88,7 +88,7 @@ export function createWriteGate(options: WriteGateOptions): WriteGate {
       const task = taskId === null ? undefined : options.task(taskId);
       const summary = await git.summary(project.rootPath, `gate-${runId}`);
       const tree = describeTree(summary);
-      const canCheckpoint = options.checkpoint() && summary.isRepository && (summary.recentCommits ?? []).length > 0;
+      const canCheckpoint = summary.isRepository && (summary.recentCommits ?? []).length > 0;
       const scope =
         task !== undefined && task.files.length > 0
           ? `The task names these files: ${task.files.slice(0, 12).join(', ')}${task.files.length > 12 ? ` and ${task.files.length - 12} more` : ''}. The agent is not limited to them, so check the changes afterwards.`
@@ -100,7 +100,7 @@ export function createWriteGate(options: WriteGateOptions): WriteGate {
           ...tree.lines,
           ...tree.warnings.map((w) => `Warning: ${w}`),
           `Likely change scope: ${scope}`,
-          canCheckpoint ? 'A checkpoint of the current state is saved first (a Git reference; no file is touched).' : 'No checkpoint will be saved.',
+          canCheckpoint ? 'A checkpoint of the current state is saved first (a Git reference; no file is touched), so afterwards you can review exactly what the agent changed and approve, reject or revert it.' : 'No checkpoint can be saved, so the changes cannot be reviewed or rejected afterwards.',
           'The agent keeps its own permission rules: it may edit files but not run other commands, and recursive deletes, history rewrites and pushes are denied.',
         ].join('\n\n'),
         confirmLabel: 'Allow this run',
@@ -110,7 +110,10 @@ export function createWriteGate(options: WriteGateOptions): WriteGate {
       let checkpoint: string | undefined;
       if (canCheckpoint) {
         const stamp = now().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-        checkpoint = (await git.checkpoint(project.rootPath, `gate-${runId}`, `before-${runId.slice(0, 8)}-${stamp}`)).ref;
+        const saved = await git.checkpoint(project.rootPath, `gate-${runId}`, `before-${runId.slice(0, 8)}-${stamp}`);
+        checkpoint = saved.ref;
+        // If the review session cannot be opened, the run does not start: an agent must not change files that cannot be reviewed.
+        await options.sessions?.begin({ runId, projectId, taskId, roleLabel, checkpoint: saved });
       }
       permissions.record({
         projectId,

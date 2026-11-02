@@ -51,7 +51,6 @@ describe('settings schema', () => {
       'limits.cloudPerDay': 20,
       'limits.cloudPerProjectPerDay': 10,
       'limits.cloudPerTask': 5,
-      'safety.checkpointBeforeWrites': true,
       'safety.commandTimeoutSeconds': 600,
     });
   });

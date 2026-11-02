@@ -12,6 +12,7 @@ import type { AuditService, HandoffService, MemoryService, PackService } from '.
 import type { StorageService } from '../storage';
 import type { UsageService } from '../usage';
 import type { CommandService, PermissionService, WriteGate } from '../security';
+import type { ChangeService, OverviewService } from '../changes';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
 import type { Ipc } from './handle';
@@ -36,6 +37,8 @@ export interface HandlerServices {
   permissions: PermissionService;
   commands: CommandService;
   gate: WriteGate;
+  changes: ChangeService;
+  overview: OverviewService;
   /** A fresh resource snapshot with the local-inference verdict. */
   resources: () => Promise<ResourceReport>;
   git: GitService;
@@ -185,6 +188,15 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
     return { revoked: true as const };
   });
   ipc.handle('commands:run', ({ id }) => services.commands.run(id));
+  ipc.handle('git:overview', ({ projectId }) => services.overview.overview(projectId));
+  ipc.handle('git:checkpoint', ({ projectId, name }) => services.overview.checkpoint(projectId, name));
+  ipc.handle('changes:sessions', ({ projectId }) => services.changes.sessions(projectId));
+  ipc.handle('changes:review', ({ sessionId }) => services.changes.review(sessionId));
+  ipc.handle('changes:approve', ({ sessionId }) => services.changes.approve(sessionId));
+  ipc.handle('changes:reject', ({ sessionId }) => services.changes.reject(sessionId));
+  ipc.handle('changes:revert', ({ projectId, commit }) => services.changes.revert(projectId, commit));
+  ipc.handle('worktrees:add', ({ projectId, name }) => services.overview.addWorktree(projectId, name));
+  ipc.handle('worktrees:remove', ({ id }) => services.overview.removeWorktree(id));
   ipc.handle('git:init', ({ projectId }) => services.gate.initGit(projectId));
   ipc.handle('usage:list', ({ projectId, limit }) => services.usage.list({ projectId, limit }));
 

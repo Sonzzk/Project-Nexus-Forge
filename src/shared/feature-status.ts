@@ -53,7 +53,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('workbench', 'AI Workbench', 'available', 13, 'Run queue, routing, permissions and approved commands, and the local-inference policy; the live session view arrives in Step 17.'),
   nav('tasks', 'Tasks and Roadmap', 'available', 10, 'Board, list and milestone roadmap, with agent runs queued from each task.'),
   nav('context', 'Project Context', 'available', 9, 'Project memory, context packs and session handoffs.'),
-  nav('git', 'Git and Changes', 'available', 7, 'Read-only status and recent commits; diff review and revert arrive in Step 16.'),
+  nav('git', 'Git and Changes', 'available', 7, 'Status, branches and recent commits, agent changes with diffs to commit, reject or revert, checkpoints and working trees.'),
   nav('testing', 'Testing', 'upcoming', 23),
   nav('assets', 'Assets', 'upcoming', 22),
   nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits.'),

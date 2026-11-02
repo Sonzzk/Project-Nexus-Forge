@@ -10,6 +10,8 @@ import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, ty
 import { attachProviders, emptyUsage, emptyWindow, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
 import type { UsageRow } from '@shared/usage';
 import type { PermissionsView } from '@shared/permissions';
+import type { Review } from '@shared/changes';
+import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
@@ -391,6 +393,93 @@ describe('audit and Git', () => {
     expect(await screen.findByText('Select a project to see its Git status.')).toBeTruthy();
     await user.click(within(sidebar()).getByRole('button', { name: 'Dashboard' }));
     expect(within(await screen.findByRole('region', { name: 'Recent changes' })).getByText(/Select a project/)).toBeTruthy();
+  });
+});
+
+describe('reviewing agent changes', () => {
+  let changes: FakeChanges;
+  const review = (overrides: Partial<Review> = {}): Review => ({
+    session: sampleSession(1),
+    notes: [],
+    files: [
+      { path: 'src/player.js', status: 'modified', binary: false, sizeBefore: 20, sizeAfter: 30, additions: 1, deletions: 1, hidden: false, overlap: true, diff: '--- a/src/player.js\n+++ b/src/player.js\n@@ -1 +1 @@\n-const jump = 1;\n+const jump = 2;\n', note: '' },
+      { path: 'art/hero.png', status: 'modified', binary: true, sizeBefore: 2048, sizeAfter: 4096, additions: 0, deletions: 0, hidden: false, overlap: false, diff: '', note: 'Binary file: 2,048 bytes before, 4,096 bytes now. Git shows no line changes for it.' },
+      { path: '.env', status: 'added', binary: false, sizeBefore: null, sizeAfter: 12, additions: 0, deletions: 0, hidden: true, overlap: false, diff: '', note: 'Not shown: this file can hold secrets. It is never committed from here.' },
+    ],
+    ...overrides,
+  });
+  const openGit = async (seed: Partial<FakeChanges> = {}) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    changes = attachChanges(fake, seed);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Git and Changes/ }));
+    await screen.findByRole('region', { name: 'Agent changes' });
+    return user;
+  };
+
+  it('says so when no agent has changed anything, and lists a session with what it can still do', async () => {
+    await openGit();
+    expect(await screen.findByText('No agent has changed files in this project yet.')).toBeTruthy();
+  });
+
+  it('shows the changed files with diffs, a binary notice and a hidden file, and marks the file that already had your changes', async () => {
+    const user = await openGit({ sessions: [sampleSession(1)], reviews: { 'session-1': review() } });
+    await user.click(await screen.findByRole('button', { name: 'Review the changes of the Implementer for Add jumping' }));
+    const files = await screen.findByRole('list', { name: 'Changed files' });
+    expect(within(files).getByText('src/player.js')).toBeTruthy();
+    expect(within(files).getByText(/had your changes/)).toBeTruthy();
+    expect(within(files).getByText(/binary · 2.0 KB|binary · 2,048 B → 4,096 B/)).toBeTruthy();
+    expect(within(files).getByText(/Binary file: 2,048 bytes before/)).toBeTruthy();
+    expect(within(files).getByText(/this file can hold secrets/)).toBeTruthy();
+    const diff = within(files).getByLabelText('Diff');
+    expect(diff.querySelectorAll('.diff__add')).toHaveLength(1);
+    expect(diff.querySelectorAll('.diff__del')).toHaveLength(1);
+    expect(diff.querySelectorAll('.diff__hunk')).toHaveLength(1);
+    expect(diff.textContent).toContain('+const jump = 2;');
+  });
+
+  it('commits only after the window, and a declined window leaves the session open', async () => {
+    const user = await openGit({ sessions: [sampleSession(1)], reviews: { 'session-1': review() }, windowAnswer: false });
+    await user.click(await screen.findByRole('button', { name: 'Commit the changes of the Implementer' }));
+    await waitFor(() => expect(fake.calls.some((c) => c.channel === 'changes:approve')).toBe(true));
+    expect(changes.sessions[0]?.status).toBe('open');
+    changes.windowAnswer = true;
+    await user.click(screen.getByRole('button', { name: 'Commit the changes of the Implementer' }));
+    expect(await screen.findByText(/Committed as c0ffee00/)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Revert the commit of the Implementer' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Commit the changes of the Implementer' })).toBeNull();
+    const sent = fake.calls.filter((c) => c.channel === 'changes:approve').map((c) => Object.keys(c.input as object));
+    expect(sent.every((keys) => keys.length === 1 && keys[0] === 'sessionId')).toBe(true); // the page names a session, never a file
+  });
+
+  it('rejects after the window and says where the copy was kept; reverts a committed session with a new commit', async () => {
+    const user = await openGit({ sessions: [sampleSession(1), sampleSession(2, { status: 'approved', commit: 'a'.repeat(40) })], reviews: { 'session-1': review() } });
+    await user.click(await screen.findByRole('button', { name: 'Reject the changes of the Implementer' }));
+    expect(await screen.findByText(/A copy of what was there is in C:\\Data\\rejected-changes/)).toBeTruthy();
+    await user.click(await screen.findByRole('button', { name: 'Revert the commit of the Implementer' }));
+    expect(fake.calls.find((c) => c.channel === 'changes:revert')?.input).toEqual({ projectId: 'project-1', commit: 'a'.repeat(40) });
+    expect(await screen.findByText(/Reverted with a new commit deadbeef/)).toBeTruthy();
+  });
+
+  it('cannot commit or reject while the run is still working', async () => {
+    await openGit({ sessions: [sampleSession(1, { runActive: true })] });
+    expect((await screen.findByRole<HTMLButtonElement>('button', { name: 'Commit the changes of the Implementer' })).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Reject the changes of the Implementer' }).disabled).toBe(true);
+    expect(screen.getByText(/the run is still working/)).toBeTruthy();
+  });
+
+  it('shows branches, saves a named checkpoint, says what Git does not protect, and adds and removes a working tree through windows', async () => {
+    const user = await openGit({ overview: { ...emptyOverview, protection: { lfs: false, binaryFiles: 3, largestBinaryMb: 12, notes: ['A checkpoint or commit holds tracked files only.', '3 tracked binary assets are stored in full without Git LFS. A commit is not a real backup of big assets.'] } } });
+    const tools = await screen.findByRole('region', { name: 'Branches, checkpoints and working trees' });
+    expect(await within(tools).findByText('main')).toBeTruthy();
+    expect(within(tools).getByText(/without Git LFS/)).toBeTruthy();
+    await user.type(within(tools).getByLabelText('Save a checkpoint'), 'before-dash');
+    await user.click(within(tools).getByRole('button', { name: 'Save checkpoint' }));
+    expect(await within(tools).findByText('before-dash')).toBeTruthy();
+    await user.type(within(tools).getByLabelText('New working tree'), 'dash');
+    await user.click(within(tools).getByRole('button', { name: 'Add working tree…' }));
+    expect(await within(tools).findByText('gdcc/dash', { exact: false })).toBeTruthy();
+    await user.click(within(tools).getByRole('button', { name: 'Remove the working tree dash' }));
+    await waitFor(() => expect(within(tools).queryByRole('list', { name: 'Working trees' })).toBeNull());
   });
 });
 

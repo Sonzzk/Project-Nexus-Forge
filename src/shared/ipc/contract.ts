@@ -14,6 +14,7 @@ import {
   PackSummarySchema,
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import { ChangeSessionSchema, GitOverviewSchema, ReviewSchema } from '../changes';
 import { CommandResultSchema, PERMISSION_SCOPES, PermissionSchema, PermissionsViewSchema } from '../permissions';
 import { ResourceReportSchema } from '../resources';
 import { UsageListRequestSchema, UsageRowSchema, UsageSummarySchema } from '../usage';
@@ -220,6 +221,17 @@ export const contract = {
   'commands:approve': { request: z.strictObject({ projectId: z.string().max(64), label: z.string().max(200) }), response: z.strictObject({ approved: z.boolean() }) },
   'commands:revoke': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ revoked: z.literal(true) }) },
   'commands:run': { request: z.strictObject({ id: z.string().max(64) }), response: CommandResultSchema },
+  // Reviewing agent changes (Step 16). Each of these that changes anything asks in a native window first; the page names a session
+  // or a commit and never a file, a path or a command.
+  'git:overview': { request: z.strictObject({ projectId: z.string().max(64) }), response: GitOverviewSchema },
+  'git:checkpoint': { request: z.strictObject({ projectId: z.string().max(64), name: z.string().min(1).max(80) }), response: z.strictObject({ name: z.string(), ref: z.string() }) },
+  'changes:sessions': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(ChangeSessionSchema) },
+  'changes:review': { request: z.strictObject({ sessionId: z.string().max(64) }), response: ReviewSchema },
+  'changes:approve': { request: z.strictObject({ sessionId: z.string().max(64) }), response: z.strictObject({ committed: z.boolean(), commit: z.string().optional() }) },
+  'changes:reject': { request: z.strictObject({ sessionId: z.string().max(64) }), response: z.strictObject({ rejected: z.boolean(), savedTo: z.string().optional() }) },
+  'changes:revert': { request: z.strictObject({ projectId: z.string().max(64), commit: z.string().regex(/^[0-9a-f]{40}$/) }), response: z.strictObject({ reverted: z.boolean(), commit: z.string().optional() }) },
+  'worktrees:add': { request: z.strictObject({ projectId: z.string().max(64), name: z.string().min(1).max(60) }), response: z.strictObject({ created: z.boolean() }) },
+  'worktrees:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.boolean() }) },
   'git:init': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ created: z.boolean() }) },
   // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
   // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.

@@ -14,6 +14,8 @@ export interface Checkpoint {
   /** The reference that now names the saved state, for example `refs/gdcc/checkpoints/before-run`. */
   ref: string;
   commit: string;
+  /** The commit HEAD pointed at when the checkpoint was made. */
+  head: string;
   /** True when uncommitted changes to tracked files are in the checkpoint. Untracked files never are. */
   includesUncommitted: boolean;
 }
@@ -73,19 +75,16 @@ export function parseStatus(output: string): Pick<GitSummary, 'branch' | 'upstre
 
 const COMMIT_FORMAT = '%H%x1f%an%x1f%aI%x1f%s';
 
-export function createGitService(options: { runner: ProcessRunner; logger: Logger; locate?: () => string | undefined }): GitService {
-  const { runner, logger } = options;
-  const locate = options.locate ?? locateGit;
-
-  /** One Git command. `write` leaves out GIT_OPTIONAL_LOCKS=0, which is only for reading. */
-  const exec = (git: string, root: string, ownerId: string, args: string[], write = false) =>
+/** One Git command through the process runner; `write` leaves out GIT_OPTIONAL_LOCKS=0, which is only for reading. Shared by the Git modules. */
+export function createGitExec(runner: ProcessRunner, locate: () => string | undefined) {
+  const exec = (git: string, root: string, ownerId: string, args: string[], write = false, timeoutMs = 15_000, maxOutputBytes = 1024 * 1024) =>
     runner.start({
       executable: git,
       args: ['-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', ...args],
       cwd: root,
       env: { ...(write ? {} : { GIT_OPTIONAL_LOCKS: '0' }), GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat', LC_ALL: 'C' },
-      timeoutMs: 15_000,
-      maxOutputBytes: 1024 * 1024,
+      timeoutMs,
+      maxOutputBytes,
       purpose: `${write ? 'Run' : 'Read'} Git ${args[0] ?? ''}`,
       owner: { kind: 'git', id: ownerId },
     }).result;
@@ -94,6 +93,14 @@ export function createGitService(options: { runner: ProcessRunner; logger: Logge
     if (git === undefined) throw new AppError('TOOL_NOT_INSTALLED', 'Git was not found on this PC.', { hint: 'Install Git for Windows. The app never installs it for you.' });
     return git;
   };
+  return { exec, needGit };
+}
+
+export function createGitService(options: { runner: ProcessRunner; logger: Logger; locate?: () => string | undefined }): GitService {
+  const { runner, logger } = options;
+  const locate = options.locate ?? locateGit;
+
+  const { exec, needGit } = createGitExec(runner, locate);
 
   return {
     async init(root, ownerId) {
@@ -122,7 +129,7 @@ export function createGitService(options: { runner: ProcessRunner; logger: Logge
       const commit = saved !== '' ? saved : head.stdoutTail.trim();
       const made = await exec(git, root, ownerId, ['update-ref', ref, commit], true);
       if (made.exitCode !== 0) throw new AppError('TOOL_FAILED', 'Git could not record the checkpoint.', { hint: made.stderrTail.trim().slice(0, 300) || 'Details are in the log.' });
-      return { ref, commit, includesUncommitted: saved !== '' };
+      return { ref, commit, head: head.stdoutTail.trim(), includesUncommitted: saved !== '' };
     },
 
     async summary(root, ownerId) {

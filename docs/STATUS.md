@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 15 · Safe execution and permissions: done (2026-11-02, tag `step-15`)
-**Next step:** Step 16 · Diff review and code changes (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-16--diff-review-and-code-changes).
+**Current step:** Step 16 · Diff review and code changes: done (2026-11-02, tag `step-16`)
+**Next step:** Step 17 · Activity logs and monitoring (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-17--activity-logs-and-monitoring).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -20,6 +20,7 @@
 - **Step 13.** Routing profiles with per-role and per-run choices, the run queue (priorities, holds with reasons, one run per provider, duplicate-launch refusal, cancel of owned programs only), the per-project writer lock that survives restarts, bounded and confirmed retries, the resource monitor and the local-inference policy, the AI Workbench and the Active agent sessions card (ARCHITECTURE.md section 26, D-038). Verified by all six gates (below).
 - **Step 14.** The local usage log (`usage_log`: task, project, provider, model, times, status, and token counts or a cost estimate only when the provider returned them), launch limits per day, project and task checked before the confirmation, the Usage and limits section on the Integrations page and a dashboard card (ARCHITECTURE.md section 27, D-039). Verified by all six gates (below).
 - **Step 15.** Scoped permissions granted only through native windows, the pre-write gate with Git state, uncommitted-work warning and a checkpoint reference, approved commands bound to the script text, secret protection for agents, Git init, and write-capable Claude Code and Codex runs behind all of it (ARCHITECTURE.md section 28, D-040). Verified by all six gates (below); the first writing run was made on a throwaway project with a test double, not a provider.
+- **Step 16.** Change sessions against the checkpoint saved before each writing run, unified diffs with binary and secret-file handling, Commit, Reject (with a copy kept) and Revert, branches, named checkpoints with what Git cannot protect, and guarded working trees (ARCHITECTURE.md section 29, D-041). Verified by all six gates (below); reviewed on real Git repositories with a test double in place of the provider.
 
 ## In progress
 - Nothing.
@@ -29,7 +30,7 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 16: change tracking per session against a recorded base, unified diffs, approve (commit), reject (restore only the session's files) and revert (`git revert`), named checkpoints (the `refs/gdcc/checkpoints/` references from Step 15 are the base), Git LFS warning, optional worktrees tied to the writer lock.
+- Step 17: the Activity and Logs page with filters, search and redacted export; the live session view (only observed facts, labeled where the provider exposes nothing); the command queue view; a resource panel and dashboard warnings; outstanding approvals on the dashboard; log retention limits (the usage log has none yet, KI-018) and a redacted diagnostics bundle. It builds on the queue, the resource monitor, the approvals log and the change sessions.
 
 ## Application feature status
 The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
@@ -58,6 +59,15 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 16
+- **Requested:** change tracking per session against a recorded base; unified diffs for text files and sizes plus a notice for binaries; approve (commit), reject (restore only the session's files after confirmation, keeping other uncommitted work) and revert (`git revert`, never reset); named checkpoints and a warning that Git may not protect large binaries (Git LFS detected); optional worktrees created and removed only with approval and tied to the writer lock; the Git and Changes page with status, branches and recent commits.
+- **Changed:** `src/main/changes/` (`service.ts`, `overview.ts`), `src/main/git/ops.ts` (and `createGitExec` in `git.ts`), `src/shared/changes.ts`, migration `0011_changes.sql`, the gate opens a session after the checkpoint (the checkpoint setting was removed), nine channels, `ChangesPanel` and `GitTools` on the Git page, diff styles, `test/mocks/fake-changes.ts`, `test/e2e/changes.e2e.ts`; ARCHITECTURE.md section 29, D-041, KI-020, DATA.md, CHANGELOG and this file.
+- **Verified (2026-11-02):** `npm run typecheck`, `lint`, `test` (1030 of 1030), `build`, `check:docs` and `test:e2e` (45 of 45, including a checkpoint saved without touching any file and a working tree added and removed through windows in the real app). The review, commit and reject were exercised on real temporary Git repositories, including after a full writing run with a test double; no provider was called and no usage was spent.
+- **Unfinished:** nothing in Step 16 except running an agent inside a working tree (KI-020, D-041). Not built on purpose: restoring a whole checkpoint, comparing two checkpoints, per-hunk approval.
+- **Known risks:** KI-020 (edits you make during or after a run count as the agent's; ignored files are not covered; reviews are cut at their size limits); a live Claude Code or Codex writing run has still never been made.
+- **Relevant files:** `src/main/changes/service.ts`, `src/main/git/ops.ts`, `src/main/security/gate.ts`, `src/renderer/src/features/git/ChangesPanel.tsx`.
+- **Next task:** Step 17 · Activity logs and monitoring.
 
 ## Handoff: Step 15
 - **Requested:** permission scopes per project and task with approvals stored (what, where, when) that only a main-process dialog can grant; a pre-write gate (Git status, uncommitted-work warning, change scope, confirmation, approved task and folder recorded, `git init` offer, optional checkpoint); approved commands with a destructive-pattern block and no shell strings; secret protection; write-capable Claude Code and Codex runs through the gate with the CLIs' own permission rules kept.

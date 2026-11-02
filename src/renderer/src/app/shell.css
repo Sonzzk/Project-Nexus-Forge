@@ -765,3 +765,26 @@ h3 {
   border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent);
   border-radius: 6px;
 }
+
+.diff {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  overflow: auto;
+  max-height: 420px;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.diff__add {
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+}
+
+.diff__del {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.diff__hunk {
+  color: var(--text-faint);
+}

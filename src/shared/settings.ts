@@ -45,8 +45,6 @@ export const SettingsSchema = z.object({
   'limits.cloudPerDay': z.number().int().min(0).max(1000).default(20),
   'limits.cloudPerProjectPerDay': z.number().int().min(0).max(1000).default(10),
   'limits.cloudPerTask': z.number().int().min(0).max(1000).default(5),
-  /** Safety (spec §14): save a Git checkpoint (a reference; no file is touched) before a run that changes project files. */
-  'safety.checkpointBeforeWrites': z.boolean().default(true),
   /** How long an approved project command may run before it is stopped. */
   'safety.commandTimeoutSeconds': z.number().int().min(10).max(3600).default(600),
   /** Context packs (spec §7): the token budget the builder starts from. An estimate; providers count differently. */

@@ -88,3 +88,13 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **Project hooks** (`.claude/settings.json`) and MCP servers (`.mcp.json`) run when Claude Code starts in a project, even read-only; the confirmation names them. The agent cannot edit them.
 - **The destructive-command classifier is a net**, not a proof: a script that deletes through a program it does not know (a custom tool) is not flagged. Only `package.json` scripts are discovered; engine commands arrive with Steps 18 to 21.
 - **A task's declared files are advice**: the agent is not limited to them, and the window says so.
+
+## KI-020 · Review and undo limits (found in Step 16, accepted)
+
+- **Only runs that passed the gate are reviewable**, and only in a repository that has commits. A change made by hand, or by an agent run in a terminal, is not a session.
+- **The review compares with the state when the run was approved**, so edits you make to the project while a run is working, or between the run and the review, look like the agent's. The reject window says so, and a copy is kept first.
+- **Untracked ignored files** (build outputs, engine caches) are never in a checkpoint, a review or a commit. Renames show as a deletion and an addition.
+- **Large reviews are cut:** a file over 4,000 changed lines or 200 KB of diff, and reviews over 1.5 MB or 300 files, show a note instead of text. A reject needs a copy of every changed file, so it stops at 50 MB for one file or 200 MB in all.
+- **Working trees are not used by runs yet.** They can be added and removed from the Git page, but an agent run still works in the project folder under the single-writer lock (D-041).
+- **Revert** refuses merge commits and a commit that is not in the current branch's history. A repository hook can still stop a commit or a revert; its message is shown.
+- **Not proven live:** the review was exercised on real Git repositories with a test double in place of the provider, not after a real Claude Code or Codex run.

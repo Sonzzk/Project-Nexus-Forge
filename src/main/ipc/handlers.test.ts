@@ -16,6 +16,8 @@ import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
 import { createUsageService } from '../usage';
 import { createCommandService, createPermissionService, createWriteGate } from '../security';
+import { createChangeService, createOverviewService } from '../changes';
+import { createGitOps } from '../git';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -81,8 +83,12 @@ async function setup() {
   });
   const confirmUi = () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer));
   const permissions = createPermissionService({ db, projects, activity, confirm: confirmUi });
-  const gate = createWriteGate({ git, projects, permissions, activity, confirm: confirmUi, task: (id) => ({ title: tasks.get(id).title, files: [] }), checkpoint: () => false });
+  const gate = createWriteGate({ git, projects, permissions, activity, confirm: confirmUi, task: (id) => ({ title: tasks.get(id).title, files: [] }) });
   const commands = createCommandService({ db, projects, permissions, activity, runner: { start: () => { throw new Error('no process'); } } as never, redactor, confirm: confirmUi, locate: () => undefined, timeoutMs: () => 1000 });
+  const noGit = { start: () => { throw new Error('no process'); } } as never;
+  const gitOps = createGitOps({ runner: noGit, locate: () => undefined });
+  const changes = createChangeService({ db, projects, git: gitOps, permissions, activity, redactor, confirm: confirmUi, backupDir: join(dir, 'rejected') });
+  const overview = createOverviewService({ db, projects, git: gitOps, gitService: git, permissions, activity, confirm: confirmUi, worktreeDir: join(dir, 'worktrees'), writerLocked: () => false });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
     execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
@@ -126,6 +132,8 @@ async function setup() {
     permissions,
     commands,
     gate,
+    changes,
+    overview,
     resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,
     reveal: (full) => void revealed.push(full),
@@ -483,6 +491,29 @@ describe('agent channels', () => {
     expect(await call('commands:run', { id: 'x', command: 'rm -rf /' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     uiAnswer = false;
     expect(await call('git:init', { projectId })).toMatchObject({ ok: true, value: { created: false } });
+  });
+
+  it('reviewing changes: sessions are listed per project, unknown ones are refused, and a request names a session or a full commit id, never a file', async () => {
+    const { call } = await withTask();
+    const projectId = ((await call('projects:list')) as { ok: true; value: { id: string }[] }).value[0]?.id ?? '';
+    expect(await call('changes:sessions', { projectId })).toMatchObject({ ok: true, value: [] });
+    expect(await call('changes:sessions', { projectId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    for (const channel of ['changes:review', 'changes:approve', 'changes:reject'])
+      expect(await call(channel, { sessionId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await call('changes:approve', { sessionId: 'nope', files: ['.env'] })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('changes:revert', { projectId, commit: 'HEAD' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('changes:revert', { projectId, commit: '--no-edit' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  });
+
+  it('git overview, checkpoints and working trees: explain a missing Git, refuse bad names, and ask before adding a tree', async () => {
+    const { call } = await withTask();
+    const projectId = ((await call('projects:list')) as { ok: true; value: { id: string }[] }).value[0]?.id ?? '';
+    expect(await call('git:overview', { projectId })).toMatchObject({ ok: true, value: { branches: [], note: 'Git is not installed.' } });
+    expect(await call('git:checkpoint', { projectId, name: '../x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('worktrees:add', { projectId, name: 'a b' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('worktrees:remove', { id: 'not-mine' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    uiAnswer = false;
+    expect(await call('worktrees:add', { projectId, name: 'dash' })).toMatchObject({ ok: true, value: { created: false } });
   });
 
   it('cannot be asked to start a run: there is no channel that moves a run to running, and bad input is refused', async () => {

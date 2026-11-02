@@ -9,7 +9,8 @@ import { memoryLogger } from '../../../test/helpers/logger';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { makeTempDir, removeTempDirs } from '../../../test/helpers/temp';
 import { snapshotTree } from '../../../test/helpers/tree';
-import { createGitService, locateGit } from '../git';
+import { createChangeService } from '../changes';
+import { createGitOps, createGitService, locateGit } from '../git';
 import { createActivityLog, createRedactor } from '../logging';
 import { createAgentService, createRunQueue, createTaskService, type RunQueue } from '../planning';
 import { createProcessRunner } from '../process';
@@ -44,6 +45,7 @@ async function env() {
   git('init', '-q', '-b', 'main');
   git('config', 'user.name', 'Test');
   git('config', 'user.email', 't@example.com');
+  git('config', 'core.autocrlf', 'false'); // files are compared byte for byte
   git('add', '.');
   git('commit', '-q', '-m', 'Start');
   writeFileSync(join(dir, 'src', 'mine.js'), 'export const mine = 2; // my unfinished edit\n'); // uncommitted work of the person
@@ -74,14 +76,15 @@ async function env() {
   const providers = createProviderService({ db, adapters, projects, activity, usage, logger, redactor, confirm, progress: () => undefined, ollamaEndpoint: () => 'http://127.0.0.1:11434', env: () => ({}), sandboxDir: () => 'C:\\sandbox' });
   const permissions = createPermissionService({ db, projects, activity, confirm });
   const runner = createProcessRunner({ logger, redactor });
+  const changes = createChangeService({ db, projects, git: createGitOps({ runner }), permissions, activity, redactor, confirm, backupDir: join(makeTempDir(), 'rejected-changes') });
   const gate = createWriteGate({
     git: createGitService({ runner, logger }),
+    sessions: changes,
     projects,
     permissions,
     activity,
     confirm,
     task: (id) => ({ title: tasks.get(id).title, files: tasks.get(id).files }),
-    checkpoint: () => true,
   });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger, confirm, redact: (text) => redactor.redact(text), writes: gate,
@@ -98,7 +101,7 @@ async function env() {
   tasks.approvePlan(task.id, true);
   const [planner, implementer] = agents.createWorkflow({ taskId: task.id, workflow: 'implement', includeReviewer: false, includeQa: false }).map((r) => r.id) as [string, string];
   queue.record(planner, 'completed', 'plan done by hand');
-  return { db, dir, git, project, task, tasks, agents, queue, permissions, usage, asked, answers, edits, implementer, activity, claude };
+  return { db, dir, git, project, task, tasks, agents, queue, permissions, usage, asked, answers, edits, implementer, activity, claude, changes };
 }
 
 const until = async (check: () => boolean, ms = 6000): Promise<void> => {
@@ -160,6 +163,35 @@ describe('the first write-capable run on a throwaway project', () => {
     expect(e.agents.get(e.implementer).result).toContain('Changed game.js');
     expect(e.permissions.approvals(e.project.id).find((a) => a.runId === e.implementer)).toMatchObject({ scope: 'project-writes', taskId: e.task.id, where: e.dir });
     expect(e.usage.list({ limit: 1 })[0]).toMatchObject({ runId: e.implementer, purpose: 'agent-run', status: 'completed' });
+  });
+
+  realGit('afterwards the change can be reviewed — only the agent’s file, not the person’s unfinished edit — and committed on its own', async () => {
+    const e = await env();
+    await e.permissions.request({ projectId: e.project.id, scope: 'project-writes' });
+    await e.queue.start(e.implementer);
+    await until(() => e.agents.get(e.implementer).state === 'completed');
+    const [session] = e.changes.sessions(e.project.id);
+    expect(session).toMatchObject({ runId: e.implementer, status: 'open', runActive: false, roleLabel: 'Implementer' });
+    const review = await e.changes.review(session?.id ?? '');
+    expect(review.files.map((f) => f.path)).toEqual(['src/game.js']); // mine.js was edited by the person before the run
+    expect(review.files[0]?.diff).toContain('+export const jump = 2; // edited by the agent');
+    e.asked.length = 0;
+    const { commit } = await e.changes.approve(session?.id ?? '');
+    expect(e.git('show', '--name-only', '--format=', commit ?? '').trim()).toBe('src/game.js');
+    expect(e.git('status', '--porcelain').trimEnd()).toBe(' M src/mine.js'); // the person's work is still uncommitted
+    expect(readFileSync(join(e.dir, 'src', 'mine.js'), 'utf8')).toContain('my unfinished edit');
+  });
+
+  realGit('or rejected: the agent’s file goes back and the person’s unfinished edit stays', async () => {
+    const e = await env();
+    await e.permissions.request({ projectId: e.project.id, scope: 'project-writes' });
+    await e.queue.start(e.implementer);
+    await until(() => e.agents.get(e.implementer).state === 'completed');
+    const [session] = e.changes.sessions(e.project.id);
+    expect((await e.changes.reject(session?.id ?? '')).rejected).toBe(true);
+    expect(readFileSync(join(e.dir, 'src', 'game.js'), 'utf8')).toBe('export const jump = 1;\n');
+    expect(readFileSync(join(e.dir, 'src', 'mine.js'), 'utf8')).toContain('my unfinished edit');
+    expect(e.git('log', '--oneline').trim().split(/\r?\n/)).toHaveLength(1);
   });
 
   realGit('declining the gate changes nothing and leaves the run queued', async () => {

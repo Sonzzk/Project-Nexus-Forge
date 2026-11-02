@@ -40,7 +40,7 @@ function throwaway(options: { commit?: boolean; repository?: boolean } = {}): { 
   return { dir, git };
 }
 
-async function env(dir: string, options: { checkpoint?: boolean; files?: string[]; failCheckpoint?: boolean } = {}) {
+async function env(dir: string, options: { files?: string[]; failCheckpoint?: boolean } = {}) {
   const { db } = await openMigratedDb();
   const logger = memoryLogger();
   const activity = createActivityLog({ db, redactor: createRedactor(), logger });
@@ -68,7 +68,6 @@ async function env(dir: string, options: { checkpoint?: boolean; files?: string[
       const found = tasks.get(id);
       return { title: found.title, files: found.files };
     },
-    checkpoint: () => options.checkpoint ?? true,
   });
   return { db, project, taskId: task.id, permissions, gate, asked, answer, activity };
 }
@@ -173,16 +172,7 @@ describe('the pre-write gate', () => {
     const result = await e.gate.authorize({ runId: 'run-4', projectId: e.project.id, taskId: e.taskId, roleLabel: 'Implementer' });
     expect(result).toEqual({ approved: true });
     expect(e.asked[0]?.detail).toContain('not a Git repository');
-    expect(e.asked[0]?.detail).toContain('No checkpoint will be saved.');
-  });
-
-  realGit('the checkpoint can be switched off', async () => {
-    const { dir, git } = throwaway();
-    const e = await env(dir, { checkpoint: false });
-    await e.permissions.request({ projectId: e.project.id, scope: 'project-writes' });
-    const result = await e.gate.authorize({ runId: 'run-5', projectId: e.project.id, taskId: e.taskId, roleLabel: 'Implementer' });
-    expect(result).toEqual({ approved: true });
-    expect(git('for-each-ref', 'refs/gdcc')).toBe('');
+    expect(e.asked[0]?.detail).toContain('No checkpoint can be saved');
   });
 
   realGit('a checkpoint that cannot be saved stops the run before anything is recorded or changed', async () => {
