@@ -92,7 +92,7 @@ export function GitPage() {
       <header className="page__head">
         <h1>Git and Changes</h1>
         <p className="muted">
-          Read-only. Branch, uncommitted changes and recent commits of the selected project. Diff review and revert
+          Branch, uncommitted changes and recent commits of the selected project (read-only; the only change offered here is creating a repository in a folder that has none). Diff review and revert
           arrive in Step 16.
         </p>
       </header>
@@ -112,6 +112,22 @@ export function GitPage() {
             </p>
           )}
           {git !== undefined && <GitFacts git={git} />}
+          {git?.available === true && !git.isRepository && git.message === 'Not a Git repository.' && (
+            <div className="actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() =>
+                  void window.api.invoke('git:init', { projectId: selected.id }).then((result) => {
+                    if (result.ok && result.value.created) refresh();
+                  })
+                }
+              >
+                Create Git repository…
+              </button>
+              <span className="muted">Git is how changes are seen and undone. You are asked first, and nothing is added or committed.</span>
+            </div>
+          )}
           {git === undefined && error === undefined && <p className="empty">Reading…</p>}
         </section>
       )}

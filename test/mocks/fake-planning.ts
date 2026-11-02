@@ -1,6 +1,7 @@
 import { AGENT_ROLES, RUN_TRANSITIONS, renderPrompt, roleById, workflowById, type AgentRoleId, type AgentRun, type QueueView, type RunState, type WorkflowPreview } from '../../src/shared/agents';
 import { chooseRoute, type Route } from '../../src/shared/routing';
 import { allowedNext, progressOf, type Milestone, type Note, type PortfolioEntry, type Recommendations, type Risk, type Snapshot, type Task, type TaskStatus } from '../../src/shared/tasks';
+import type { CommandResult, PermissionsView } from '../../src/shared/permissions';
 import type { FakeApi } from './fake-api';
 
 // A small in-memory stand-in for the planning channels, so component tests can click through the Tasks page. It uses the real
@@ -49,6 +50,12 @@ export interface FakePlanning {
   lock: QueueView['lock'];
   /** What a started run answers (the fake finishes it at once). */
   answer: string;
+  /** Whether the queue says runs that change files are available. */
+  writesEnabled: boolean;
+  /** The permissions panel of project-1, and what the native window answers when a page asks for a grant or approval. */
+  permissions: PermissionsView;
+  windowAnswer: boolean;
+  commandOutput: CommandResult;
 }
 
 export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}): FakePlanning {
@@ -62,6 +69,10 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
     recommendation: { items: [], message: 'There are no tasks yet. Add one, or break a feature down into tasks.' },
     lock: null,
     answer: 'Plan: 1. Add the jump input. 2. Tune the height.',
+    writesEnabled: false,
+    permissions: { grants: [], approvals: [], commands: [], commandsNote: '' },
+    windowAnswer: true,
+    commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'ok', truncated: false },
     ...seed,
   };
   let counter = 100;
@@ -245,7 +256,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
   fake.handlers['queue:view'] = () => ({
     runs: state.runs.map((r) => ({ ...r, taskTitle: state.tasks.find((t) => t.id === r.taskId)?.title ?? '(task deleted)' })),
     lock: state.lock,
-    writesEnabled: false,
+    writesEnabled: state.writesEnabled,
     maxAttempts: 3,
   });
   fake.handlers['queue:route'] = routeFor;
@@ -268,6 +279,31 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
     state.runs = [...state.runs, copy];
     return finishWith(copy.id, routeFor({ ...(input as object), runId: copy.id }));
   };
+  fake.handlers['permissions:view'] = () => state.permissions;
+  fake.handlers['permissions:request'] = (input) => {
+    const { projectId, taskId } = input as { projectId: string; taskId?: string };
+    if (!state.windowAnswer) return { permission: null };
+    const grant = { id: `grant-${++counter}`, projectId, taskId: taskId ?? null, taskTitle: taskId === undefined ? null : (state.tasks.find((t) => t.id === taskId)?.title ?? null), scope: 'project-writes' as const, what: 'Approved project writes', where: 'D:\\Games\\Alpha', grantedAt: '2026-10-24T06:00:00.000Z', revokedAt: null };
+    state.permissions = { ...state.permissions, grants: [grant, ...state.permissions.grants] };
+    return { permission: grant };
+  };
+  fake.handlers['permissions:revoke'] = (input) => {
+    const id = (input as { id: string }).id;
+    state.permissions = { ...state.permissions, grants: state.permissions.grants.map((g) => (g.id === id ? { ...g, revokedAt: '2026-10-24T07:00:00.000Z' } : g)) };
+    return state.permissions.grants.find((g) => g.id === id);
+  };
+  fake.handlers['commands:approve'] = (input) => {
+    const { label } = input as { label: string };
+    if (!state.windowAnswer) return { approved: false };
+    state.permissions = { ...state.permissions, commands: state.permissions.commands.map((c) => (c.label === label ? { ...c, approval: { id: `cmd-${++counter}`, approvedAt: '2026-10-24T06:00:00.000Z', destructive: c.risks.length > 0, changed: false } } : c)) };
+    return { approved: true };
+  };
+  fake.handlers['commands:revoke'] = (input) => {
+    const id = (input as { id: string }).id;
+    state.permissions = { ...state.permissions, commands: state.permissions.commands.map((c) => (c.approval?.id === id ? { ...c, approval: null } : c)) };
+    return { revoked: true };
+  };
+  fake.handlers['commands:run'] = () => state.commandOutput;
   fake.handlers['queue:releaseLock'] = () => {
     state.lock = null;
     return { released: true };

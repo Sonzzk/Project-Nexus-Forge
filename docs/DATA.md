@@ -42,6 +42,9 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `provider_checks` | 7 | provider, time, status, version, message, hint, details, last successful request | What the last check found; derived, so it is not exported. No credentials. |
 | `writer_locks` | 8 | project (primary key, cascade), run, time taken, working folder | One writer per project. Kept across restarts until the person releases a lock left by an interrupted run; not exported, because a lock only means something on the PC where that run ran. |
 | `usage_log` | 9 | project and task (cleared if deleted, the row stays), run, purpose, provider, model, local or cloud, status, start and end time, input and output counts, cost estimate, reason | One row per request really sent, and one per launch a limit stopped. Counts and cost are empty unless the provider returned them. |
+| `permissions` | 10 | project and task (cascade), scope (project-writes), what, folder, time granted, time taken back | A lasting grant. Made only by a native window in the main process. **Not exported or imported**, so a file cannot grant a permission. |
+| `approvals` | 10 | project (cascade), task, run, scope, what, folder, detail, time | The log of what you approved, where and when: grants, writing runs (with Git state and checkpoint), approved commands, destructive runs. Not exported. |
+| `approved_commands` | 10 | project (cascade), label, argument array, hash of the script text, destructive flag, time approved, time taken back | A command you approved. A changed script is not run. Not exported. |
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 

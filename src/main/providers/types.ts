@@ -13,6 +13,8 @@ export interface GenerateRequest {
   onText?: (text: string) => void;
   /** The queued run that owns the program; the process runner refuses a second program for the same owner. */
   ownerId?: string;
+  /** The run may change files in `cwd`. Only set for a run that passed the permission gate (Step 15); every other request is read-only. */
+  write?: boolean;
 }
 
 export interface ProviderOutput {

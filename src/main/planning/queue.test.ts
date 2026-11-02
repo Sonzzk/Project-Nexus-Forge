@@ -59,14 +59,15 @@ async function env(options: Options = {}) {
   const policy = { verdict: allowed };
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger, now, confirm,
-    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId })),
+    execute: options.execute ?? ((r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write })),
     enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => routing,
     localPolicy: () => Promise.resolve(policy.verdict),
     recheckMs: () => 20,
-    writesEnabled: options.writesEnabled ?? false,
+    ...(options.writesEnabled === true ? { writes: { precheck: () => undefined, authorize: () => Promise.resolve({ approved: true }) } } : {}),
+    redact: (text) => redactor.redact(text),
   });
   queues.push(queue);
   const newTask = (title: string, extra: { priority?: 'low' | 'normal' | 'high' | 'critical'; complexity?: 'xs' | 's' | 'm' | 'l' } = {}) =>
@@ -219,12 +220,12 @@ describe('the queue', () => {
 });
 
 describe('the single-writer lock', () => {
-  it('refuses write-capable runs until Step 15, without routing or sending anything', async () => {
+  it('refuses write-capable runs when no gate is configured, without routing or sending anything', async () => {
     const e = await env();
     const task = e.newTask('Add jumping');
     e.tasks.approvePlan(task.id, true);
     const [, implementer] = e.runOf(task.id, 'implement');
-    expect(await failure(e.queue.start(implementer))).toMatchObject({ code: 'PERMISSION_REQUIRED', message: expect.stringContaining('Step 15') as unknown });
+    expect(await failure(e.queue.start(implementer))).toMatchObject({ code: 'PERMISSION_REQUIRED', message: expect.stringContaining('switched off') as unknown });
     expect(e.agents.get(implementer)).toMatchObject({ route: null, requestedAt: null });
     expect(e.queue.view(e.project.id).writesEnabled).toBe(false);
   });

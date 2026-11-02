@@ -56,6 +56,14 @@ describe('IPC contract', () => {
     expect(CHANNELS.filter((name) => FORBIDDEN_CHANNEL_WORDS.test(name.split(':')[1] ?? ''))).toEqual([]);
   });
 
+  it('no request can carry a decision: a permission or approval is only ever made by the person in a native window in main', () => {
+    const DECISION = /^(granted|grant|approved|allow|allowed|decision|answer|confirmed|confirm|consent|scope_granted|permission|permissions)$/i;
+    const guarded = CHANNELS.filter((name) => /^(permissions|commands|git|queue|providers):/.test(name));
+    for (const channel of guarded) expect(fieldNames(contract[channel].request).filter((name) => DECISION.test(name)), channel).toEqual([]);
+    // the one request that names a scope names it only to ask; it has no field that could say the answer
+    expect(fieldNames(contract['permissions:request'].request).sort()).toEqual(['projectId', 'scope', 'taskId']);
+  });
+
   it('the field-name check really does catch a forbidden shape', async () => {
     const { z: zod } = await import('zod');
     const bad = zod.strictObject({ project: zod.string(), options: zod.strictObject({ cwd: zod.string() }) });

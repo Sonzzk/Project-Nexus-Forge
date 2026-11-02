@@ -12,7 +12,7 @@ type RoleInfo = { id: AgentRoleId; label: string; purpose: string; expectedOutpu
 /**
  * Agent work for one task (spec §11): the roles and what each may do, a workflow shown with its actions and providers
  * before anything exists, queued run records, and a prompt preview. Runs start through the queue (RunControls), read-only
- * until Step 15.
+ * unless project writes were allowed (Step 15).
  */
 export function AgentsPanel({ task }: { task: Task }) {
   const [roles, setRoles] = useState<RoleInfo[]>([]);
@@ -51,13 +51,28 @@ export function AgentsPanel({ task }: { task: Task }) {
       <h3>Agent work</h3>
       <p className="muted">
         Plan a workflow, save it as queued runs, then start each run. A run is routed to a provider first and shows where it goes and what it costs; anything
-        sent to a cloud service is confirmed in a separate window. Runs are read-only until Step 15. The AI Workbench shows the whole queue.
+        sent to a cloud service is confirmed in a separate window. Runs that change files need project writes allowed on the AI Workbench and ask you again before each run. The AI Workbench shows the whole queue.
       </p>
       {error !== undefined && (
         <p role="alert">
           {error.message} {error.hint}
         </p>
       )}
+      <div className="actions">
+        <button
+          type="button"
+          className="btn"
+          onClick={() =>
+            void window.api.invoke('permissions:request', { projectId: task.projectId, taskId: task.id, scope: 'project-writes' }).then((result) => {
+              if (!result.ok) setError(result.error);
+              else setError(undefined);
+            })
+          }
+        >
+          Allow project writes for this task…
+        </button>
+        <span className="muted">Needed before the implementer can change files. You are asked in a separate window.</span>
+      </div>
 
       <div className="field">
         <label htmlFor="agent-role">Role</label>

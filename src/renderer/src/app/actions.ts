@@ -20,6 +20,7 @@ export function createActionHandlers(context: ActionContext): Record<string, () 
     'action.add-project': context.addProject,
     'action.new-task': () => context.go('tasks'),
     'action.run-agent': () => context.go('workbench'),
+    'action.write-run': () => context.go('workbench'),
   };
   // Every sidebar item navigates, including upcoming ones, whose page says which step builds them.
   for (const feature of FEATURES)

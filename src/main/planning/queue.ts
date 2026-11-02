@@ -17,17 +17,29 @@ import type { TaskService } from './tasks';
 // - One run per provider at a time; read-only runs of other providers run alongside. Reviewer and QA wait for a writer to finish.
 // - One writer per project (`writer_locks`). A writer the app saw end releases the lock; a lock left by an interrupted run is kept
 //   across restarts until the person releases it, because the app could not see that writer stop.
-// - Runs that change files are refused until Step 15. A failed or cancelled run is tried again only as a new attempt the person
+// - A run that changes files needs the permission gate (Step 15): a grant for the project or task before it can be asked to start,
+//   and a native confirmation with the Git state right before it starts. Without a gate (`writes` unset) such runs are refused.
+//   A failed or cancelled run is tried again only as a new attempt the person
 //   asks for, at most `routing.maxAttempts` times; the confirmation before a cloud send says when it repeats or escalates.
 // The queue calls no provider and starts no program itself: `execute` (ProviderService.runAgent in the app) does, and cancelling
 // aborts that call, which stops only the program the app started for the run.
 
 type Confirm = (options: { title: string; message: string; detail?: string; confirmLabel: string }) => Promise<boolean>;
 
+/** The pre-write gate the queue asks before a run that changes files (Step 15). */
+export interface WriteAccess {
+  /** Throws PERMISSION_REQUIRED unless a person granted writes for this project or task. */
+  precheck(input: { projectId: string; taskId: string | null }): void;
+  /** The native confirmation with the Git state and checkpoint; `approved: false` when declined. */
+  authorize(input: { runId: string; projectId: string; taskId: string | null; roleLabel: string }): Promise<{ approved: boolean; checkpoint?: string }>;
+}
+
 export interface ExecuteRequest {
   runId: string;
   projectId: string;
   taskId: string | null;
+  /** The run may change project files (it passed the gate). */
+  write: boolean;
   provider: ProviderId;
   model: string;
   prompt: string;
@@ -58,8 +70,10 @@ export interface RunQueueOptions {
   confirm: Confirm;
   /** Throws LIMIT_REACHED when starting this run would pass a launch limit (Step 14); the same check runs again right before the send. */
   enforceLimits: (input: { provider: ProviderId; projectId: string; taskId: string | null; runId: string }) => void;
-  /** False until Step 15: no run may change project files yet. */
-  writesEnabled: boolean;
+  /** The gate for runs that change project files. Unset: no run may change files. */
+  writes?: WriteAccess;
+  /** Removes secrets from text before it is stored or shown. */
+  redact: (text: string) => string;
   now?: () => Date;
   newId?: () => string;
 }
@@ -157,11 +171,12 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
 
   const checkWrites = (run: AgentRun): void => {
     if (!run.writeCapable) return;
-    if (!options.writesEnabled)
-      throw new AppError('PERMISSION_REQUIRED', 'Runs that change project files arrive with Step 15 (safe execution and permissions). Until then every agent run is read-only.', {
+    if (options.writes === undefined)
+      throw new AppError('PERMISSION_REQUIRED', 'Runs that change project files are switched off.', {
         hint: 'Run the planner, reviewer, QA, documentation or asset roles, or make the change by hand and record it.',
       });
     if (taskOf(run).planApprovedAt === null) throw new AppError('PERMISSION_REQUIRED', 'The implementer needs an approved plan before it can run.', { hint: 'Review the plan and approve it on the task.' });
+    options.writes.precheck({ projectId: run.projectId, taskId: run.taskId });
   };
 
   async function request(run: AgentRun, route: Route): Promise<AgentRun> {
@@ -224,7 +239,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
     const { maxAttempts } = options.routing();
     const previous = run.retryOf === null ? null : (rowsWhere('id = ?', run.retryOf)[0]?.route ?? null);
     return [
-      `Agent run: ${roleLabel(run.role)} for "${title}", read-only (attempt ${run.attempt} of at most ${maxAttempts}).`,
+      `Agent run: ${roleLabel(run.role)} for "${title}", ${run.writeCapable ? 'can change project files' : 'read-only'} (attempt ${run.attempt} of at most ${maxAttempts}).`,
       `Routing (${PROFILE_LABELS[route.profile]}): ${route.reasons.join(' ')}`,
       `Cost: ${route.billingNote}`,
       ...(route.fallback ? ['This route costs more than the routing profile wanted, so it needs your approval.'] : []),
@@ -248,16 +263,28 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
           acquireWriter(run.projectId, run.id, project.rootPath);
           locked = true;
         }
+        let checkpoint: string | undefined;
+        if (run.writeCapable && options.writes !== undefined) {
+          // Asked right before the start, so the Git state shown is the state the agent will find.
+          const gate = await options.writes.authorize({ runId: run.id, projectId: run.projectId, taskId: run.taskId, roleLabel: roleLabel(run.role) });
+          if (!gate.approved) {
+            setNote(run.id, 'Not started: you declined the approval to change project files. It stays queued; start it again when you want.');
+            activity.record({ kind: 'agent.run-declined', severity: 'info', summary: `The ${roleLabel(run.role)} run was not started: you declined the approval to change files.`, projectId: run.projectId, taskId: task.id, details: { runId: run.id } });
+            return;
+          }
+          checkpoint = gate.checkpoint;
+        }
         let prompt = agents.prompt(task.id, run.role).prompt;
         if (route.location === 'local') prompt += '\n\nYou cannot open the project files; work only from the text above.';
         const result = await options.execute({
           runId: run.id,
           projectId: run.projectId,
           taskId: run.taskId,
+          write: run.writeCapable,
           provider,
           model: route.model,
           prompt,
-          note: noteFor(run, route, task.title),
+          note: noteFor(run, route, task.title) + (checkpoint === undefined ? '' : `\nCheckpoint saved before the run: ${checkpoint}`),
           signal: controller.signal,
           onApproved: () => {
             agents.transition(run.id, run.role === 'planner' ? 'planning' : 'running', `Started with ${label}${route.model === '' ? '' : ` (${route.model})`}.`);
@@ -269,12 +296,12 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
           activity.record({ kind: 'agent.run-declined', severity: 'info', summary: `The ${roleLabel(run.role)} run was not sent to ${label}: you declined.`, projectId: run.projectId, taskId: task.id, details: { runId: run.id } });
           return;
         }
-        db.run('UPDATE agent_runs SET result = ? WHERE id = ?', result.text.slice(0, MAX_RESULT), run.id);
+        db.run('UPDATE agent_runs SET result = ? WHERE id = ?', options.redact(result.text).slice(0, MAX_RESULT), run.id);
         finish(run.id, 'completed', `Finished with ${label}: ${result.text.length.toLocaleString('en-US')} characters${result.truncated ? ', cut at the limit' : ''}.`);
       } catch (error) {
         const e = error instanceof AppError ? error : new AppError('INTERNAL', 'The run stopped unexpectedly.', { cause: error, hint: 'Details are in the log.' });
         logger.warn('agent run ended with an error', { runId: run.id, code: e.code, message: e.message });
-        const text = `${e.message}${e.hint === undefined ? '' : ` ${e.hint}`}`;
+        const text = options.redact(`${e.message}${e.hint === undefined ? '' : ` ${e.hint}`}`);
         if (!entry.approved) {
           setNote(run.id, `Could not start: ${text}`);
           activity.record({ kind: 'agent.run-not-started', severity: 'warning', summary: `The ${roleLabel(run.role)} run could not start: ${e.message}`.slice(0, 500), projectId: run.projectId, details: { runId: run.id, code: e.code } });
@@ -369,7 +396,7 @@ export function createRunQueue(options: RunQueueOptions): RunQueue {
       return {
         runs: [...open, ...recent].map((run) => ({ ...withHold(run), taskTitle: (run.taskId === null ? undefined : titles.get(run.taskId)) ?? '(task deleted)' })),
         lock: lock === undefined ? null : { runId: lock.run_id, role: holder === undefined ? 'a run that no longer exists' : roleLabel(holder.role), acquiredAt: lock.acquired_at, active: active.has(lock.run_id) },
-        writesEnabled: options.writesEnabled,
+        writesEnabled: options.writes !== undefined,
         maxAttempts: options.routing().maxAttempts,
       };
     },

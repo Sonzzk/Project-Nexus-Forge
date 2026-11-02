@@ -14,6 +14,7 @@ import {
   PackSummarySchema,
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
+import { CommandResultSchema, PERMISSION_SCOPES, PermissionSchema, PermissionsViewSchema } from '../permissions';
 import { ResourceReportSchema } from '../resources';
 import { UsageListRequestSchema, UsageRowSchema, UsageSummarySchema } from '../usage';
 import { RouteSchema } from '../routing';
@@ -208,6 +209,18 @@ export const contract = {
   // The local usage log (Step 14). Read-only: rows are written by main when a request is sent or a limit stops one.
   'usage:summary': { request: z.strictObject({ projectId: z.string().max(64).optional() }), response: UsageSummarySchema },
   'usage:list': { request: UsageListRequestSchema, response: z.array(UsageRowSchema) },
+  // Permissions and approved commands (Step 15). Nothing here grants anything by itself: a request opens a native window in main and
+  // only the person's answer there creates a grant or an approval. No request carries a program, arguments or a folder.
+  'permissions:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: PermissionsViewSchema },
+  'permissions:request': {
+    request: z.strictObject({ projectId: z.string().max(64), taskId: z.string().max(64).optional(), scope: z.enum(PERMISSION_SCOPES) }),
+    response: z.strictObject({ permission: PermissionSchema.nullable() }),
+  },
+  'permissions:revoke': { request: z.strictObject({ id: z.string().max(64) }), response: PermissionSchema },
+  'commands:approve': { request: z.strictObject({ projectId: z.string().max(64), label: z.string().max(200) }), response: z.strictObject({ approved: z.boolean() }) },
+  'commands:revoke': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ revoked: z.literal(true) }) },
+  'commands:run': { request: z.strictObject({ id: z.string().max(64) }), response: CommandResultSchema },
+  'git:init': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ created: z.boolean() }) },
   // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
   // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.
   'providers:list': { request: noInput, response: z.array(ProviderStatusSchema) },

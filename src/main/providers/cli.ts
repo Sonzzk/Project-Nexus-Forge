@@ -3,6 +3,7 @@ import { AppError } from '@shared/errors';
 import { QUOTA_UNAVAILABLE, type Capabilities, type ProviderId, type ProviderStatus, type Usage } from '@shared/providers';
 import type { Logger } from '../logging';
 import type { ProcessResult, ProcessRunner } from '../process';
+import { AGENT_WRITE_ALLOW, agentDenyRules } from '../security';
 import type { GenerateRequest, ProviderAdapter, ProviderOutput } from './types';
 
 // The two command-line providers share one shape: find the program, ask it for its version, run it non-interactively in a
@@ -62,7 +63,21 @@ function ended(provider: string, result: ProcessResult, signal: AbortSignal): vo
 const CLAUDE_CAPABILITIES: Capabilities = { models: false, streaming: true, cancellation: true, contextLength: false, structuredOutput: true, usageReporting: true, readOnlyMode: true };
 const CLAUDE_SIGN_IN = 'Open a terminal, run claude, and follow the sign-in. This app never reads your credentials.';
 
+/** A .cmd or .bat shim cannot carry arguments such as `Read(.env)` safely (D-025), so permission rules cannot be passed through one. */
+const isShim = (file: string): boolean => /\.(cmd|bat)$/i.test(file);
+
 export function createClaudeCodeAdapter(options: CliOptions): ProviderAdapter {
+  // The name of the mode that asks before acting differs between versions ("manual" in current ones, "default" in older ones), so it is
+  // read from the installed program's own help, once per program file.
+  const manualModes = new Map<string, string | undefined>();
+  const manualMode = async (exe: string): Promise<string | undefined> => {
+    if (!manualModes.has(exe)) {
+      const help = await run(options, exe, ['--help'], 'Read the Claude Code options', 'claude-code-modes');
+      const choices = /--permission-mode[\s\S]{0,400}?choices:([^)]*)\)/.exec(help.stdoutTail)?.[1] ?? '';
+      manualModes.set(exe, ['manual', 'default'].find((name) => choices.includes(`"${name}"`)));
+    }
+    return manualModes.get(exe);
+  };
   return {
     id: 'claude-code',
     capabilities: CLAUDE_CAPABILITIES,
@@ -100,9 +115,20 @@ export function createClaudeCodeAdapter(options: CliOptions): ProviderAdapter {
     async generate(request: GenerateRequest): Promise<ProviderOutput> {
       const exe = options.locate();
       if (exe === undefined) throw new AppError('TOOL_NOT_INSTALLED', 'Claude Code was not found on this PC.', { hint: 'Install it, then check again.' });
-      // Read-only: plan mode, and no tool is pre-approved. The prompt travels on stdin, never on the command line.
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', ...(request.model === '' ? [] : ['--model', request.model])];
-      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Claude Code (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `claude-code-${randomUUID()}` } });
+      // The prompt travels on stdin, never on the command line. Deny rules (secret files, destructive commands) go on every run that can carry them.
+      const deny = isShim(exe) ? [] : ['--disallowedTools', agentDenyRules().join(',')];
+      let mode: string[];
+      if (request.write === true) {
+        // Writing: the mode that asks, with only file edits pre-approved. A headless run denies whatever else would need an answer, so
+        // commands, deletes and network access stay off, and Claude Code's own permission checks stay on.
+        if (request.cwd === undefined) throw new AppError('INVALID_INPUT', 'A run that changes files needs a project folder.');
+        if (isShim(exe)) throw new AppError('UNSUPPORTED', 'This Claude Code is installed as a .cmd shim, which cannot carry the permission rules a writing run needs.', { hint: 'Install the native Claude Code (claude.exe) from its documentation, or use Codex for writing runs.' });
+        const name = await manualMode(exe);
+        if (name === undefined) throw new AppError('UNSUPPORTED', 'This Claude Code does not offer a permission mode that asks before acting, so a writing run was not started.', { hint: 'Update Claude Code. The app does not guess at options.' });
+        mode = ['--permission-mode', name, '--allowedTools', AGENT_WRITE_ALLOW.join(',')];
+      } else mode = ['--permission-mode', 'plan'];
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', ...mode, ...deny, ...(request.model === '' ? [] : ['--model', request.model])];
+      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: request.write === true ? 'Run Claude Code (can change files)' : 'Run Claude Code (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `claude-code-${randomUUID()}` } });
       const onAbort = (): void => void handle.cancel('stopped by the user');
       request.signal.addEventListener('abort', onAbort, { once: true });
       let streamed = '';
@@ -162,8 +188,11 @@ export function createCodexAdapter(options: CliOptions): ProviderAdapter {
       // Read-only sandbox (the documented default, passed explicitly). The empty folder is not a Git repository, so the repository
       // check is skipped for text-only requests; a run inside a project folder keeps the check.
       const textOnly = request.cwd === undefined;
-      const args = ['exec', '--json', '--sandbox', 'read-only', '--ephemeral', ...(textOnly ? ['--skip-git-repo-check'] : []), ...(request.model === '' ? [] : ['--model', request.model]), '-'];
-      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: 'Run Codex (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `codex-${randomUUID()}` } });
+      // A writing run uses Codex's own workspace-write sandbox: it may change files and run commands inside the project folder, and Codex enforces that.
+      if (request.write === true && textOnly) throw new AppError('INVALID_INPUT', 'A run that changes files needs a project folder.');
+      const sandbox = request.write === true ? 'workspace-write' : 'read-only';
+      const args = ['exec', '--json', '--sandbox', sandbox, '--ephemeral', ...(textOnly ? ['--skip-git-repo-check'] : []), ...(request.model === '' ? [] : ['--model', request.model]), '-'];
+      const handle = options.runner.start({ executable: exe, args, cwd: request.cwd ?? options.sandboxDir(), stdin: request.prompt, timeoutMs: options.timeoutMs(), maxOutputBytes: OUTPUT_LIMIT, purpose: request.write === true ? 'Run Codex (can change files)' : 'Run Codex (read-only)', owner: { kind: 'agent-run', id: request.ownerId ?? `codex-${randomUUID()}` } });
       const onAbort = (): void => void handle.cancel('stopped by the user');
       request.signal.addEventListener('abort', onAbort, { once: true });
       const result = await handle.result;

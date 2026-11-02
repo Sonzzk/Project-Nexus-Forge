@@ -32,6 +32,12 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
   [/\bAKIA[0-9A-Z]{16}\b/g, REDACTED],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, REDACTED],
   [/\bAIza[0-9A-Za-z_-]{30,}/g, REDACTED],
+  [/\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}/g, REDACTED], // Stripe
+  [/\bnpm_[A-Za-z0-9]{30,}/g, REDACTED],
+  [/\bhf_[A-Za-z0-9]{30,}/g, REDACTED],
+  [/\bya29\.[A-Za-z0-9_-]{20,}/g, REDACTED], // Google OAuth access token
+  [/\bhttps:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, REDACTED],
+  [/\b(AccountKey|SharedAccessKey|Pwd)=[^;\s"']+/gi, `$1=${REDACTED}`], // connection strings
   // key=value, key: value and "key": "value" where the key names a secret
   [
     new RegExp(

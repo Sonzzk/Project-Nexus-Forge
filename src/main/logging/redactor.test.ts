@@ -13,10 +13,30 @@ describe('redact', () => {
     ['xoxb-1234567890-abcdefghij', 'Slack token'],
     ['AIzaSyA1234567890abcdefghijklmnopqrstuvw', 'Google key'],
     ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop', 'JWT'],
+    // assembled at run time so the repository holds no string a secret scanner would take for a real key
+    [['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('_'), 'Stripe key'],
+    ['npm_abcdefghijklmnopqrstuvwxyz0123456789', 'npm token'],
+    ['hf_abcdefghijklmnopqrstuvwxyz0123456789', 'Hugging Face token'],
+    ['ya29.a0AfH6SMBabcdefghijklmnopqrstu', 'Google OAuth token'],
+    [['https://hooks.slack.com', 'services', 'T0000', 'B0000', 'abcdefghijklmnop'].join('/'), 'Slack webhook'],
+    ['AccountKey=abcdefghijklmnopqrstuvwxyz0123456789ABCDEF==', 'Azure storage key'],
   ])('removes %s (%s)', (secret) => {
     const out = redactor.redact(`value is ${secret} here`);
     expect(out).not.toContain(secret);
     expect(out).toContain('[redacted]');
+  });
+
+  it.each([
+    'API_KEY=abc123def456',
+    'password: hunter2hunter2',
+    '"client_secret": "s3cr3tvalue9876"',
+    'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+    'DATABASE_URL=postgres://admin:p4ssw0rd@db.internal:5432/game',
+    'export GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+  ])('removes the value of a secret-named setting: %s', (line) => {
+    const out = redactor.redact(line);
+    expect(out).toContain('[redacted]');
+    expect(out).not.toMatch(/hunter2hunter2|abc123def456|s3cr3tvalue9876|wJalrXUtnFEMI|p4ssw0rd|ghp_abcdefghijklmnop/);
   });
 
   it('removes bearer tokens, basic credentials and credentials inside URLs', () => {

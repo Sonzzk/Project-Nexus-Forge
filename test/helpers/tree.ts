@@ -11,10 +11,11 @@ export function copyFixture(name: string): string {
 }
 
 /** Every file and folder under `dir` with its size, modification time and content hash, for "nothing changed" checks. */
-export function snapshotTree(dir: string): Record<string, string> {
+export function snapshotTree(dir: string, options: { skip?: readonly string[] } = {}): Record<string, string> {
   const result: Record<string, string> = {};
   const visit = (current: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (current === dir && options.skip?.includes(entry.name) === true) continue;
       const full = join(current, entry.name);
       const key = relative(dir, full).replace(/\\/g, '/');
       const stats = statSync(full);

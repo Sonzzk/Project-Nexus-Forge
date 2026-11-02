@@ -8,9 +8,10 @@ import { createClaudeCodeAdapter, createCodexAdapter } from './cli';
 const CLAUDE = 'A:\\npm-global\\claude.cmd';
 const CODEX = 'C:\\Tools\\codex.exe';
 
-function claude(script: (args: string[]) => Scripted, options: { installed?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+const CLAUDE_EXE = 'C:\\Users\\Test\\.local\\bin\\claude.exe';
+function claude(script: (args: string[]) => Scripted, options: { installed?: boolean; env?: NodeJS.ProcessEnv; exe?: string } = {}) {
   const runner = createFakeRunner((spec) => script(spec.args as string[]));
-  const adapter = createClaudeCodeAdapter({ runner, locate: () => (options.installed === false ? undefined : CLAUDE), env: () => options.env ?? {}, timeoutMs: () => 60_000, sandboxDir: () => 'C:\\Data\\provider-sandbox', logger: memoryLogger() });
+  const adapter = createClaudeCodeAdapter({ runner, locate: () => (options.installed === false ? undefined : (options.exe ?? CLAUDE)), env: () => options.env ?? {}, timeoutMs: () => 60_000, sandboxDir: () => 'C:\\Data\\provider-sandbox', logger: memoryLogger() });
   return { runner, adapter };
 }
 function codex(script: (args: string[]) => Scripted, options: { installed?: boolean } = {}) {
@@ -125,6 +126,73 @@ describe('Claude Code: running', () => {
     setTimeout(() => controller.abort(), 10);
     expect(await failure(running)).toMatchObject({ code: 'CANCELLED' });
     expect(runner.cancelled).toEqual(['stopped by the user']);
+  });
+});
+
+const helpWith = (modes: string): string => `  --permission-mode <mode>              Permission mode to use for the session\n                                        (choices: ${modes})\n`;
+const RESULT = fixture('claude', 'stream-ok.jsonl');
+
+describe('Claude Code: runs that change files (Step 15)', () => {
+  const scripted = (modes: string) => (args: string[]): Scripted => (args[0] === '--help' ? { stdout: helpWith(modes) } : { stdout: RESULT });
+  const generateArgs = (runner: ReturnType<typeof claude>['runner']): string[] => (runner.started.find((s) => (s.args as string[])[0] === '-p')?.args ?? []) as string[];
+  const after = (args: string[], flag: string): string => args[args.indexOf(flag) + 1] ?? '';
+
+  it('asks in the permission mode that asks, pre-approves only file edits, and denies secret files and destructive commands', async () => {
+    const { adapter, runner } = claude(scripted('"acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"'), { exe: CLAUDE_EXE });
+    await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true }));
+    const args = generateArgs(runner);
+    expect(after(args, '--permission-mode')).toBe('manual');
+    expect(after(args, '--allowedTools')).toBe('Edit,Write');
+    const deny = after(args, '--disallowedTools');
+    for (const rule of ['Read(.env)', 'Edit(.env)', 'Edit(*.pem)', 'Read(id_rsa*)', 'Edit(.ssh/**)', 'Bash(rm *)', 'Bash(git reset *)', 'Bash(git push *)', 'Bash(git clean *)']) expect(deny.split(',')).toContain(rule);
+    expect(args.join(' ')).not.toMatch(/bypassPermissions|acceptEdits|dontAsk|--dangerously|plan/);
+    expect(runner.started.find((s) => (s.args as string[])[0] === '-p')).toMatchObject({ cwd: 'D:\\Games\\Alpha', stdin: 'Break this feature into steps', purpose: 'Run Claude Code (can change files)' });
+  });
+
+  it('uses the older name of the asking mode when that is the one this version has', async () => {
+    const { adapter, runner } = claude(scripted('"acceptEdits", "bypassPermissions", "default", "plan"'), { exe: CLAUDE_EXE });
+    await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true }));
+    expect(after(generateArgs(runner), '--permission-mode')).toBe('default');
+  });
+
+  it('does not start when this version has no mode that asks, when there is no folder, or when the program is a .cmd shim', async () => {
+    const none = claude(scripted('"acceptEdits", "bypassPermissions", "plan"'), { exe: CLAUDE_EXE });
+    expect(await failure(none.adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true })))).toMatchObject({ code: 'UNSUPPORTED' });
+    expect(none.runner.started.some((s) => (s.args as string[])[0] === '-p')).toBe(false);
+    const nofolder = claude(scripted('"manual"'), { exe: CLAUDE_EXE });
+    expect(await failure(nofolder.adapter.generate(request({ write: true })))).toMatchObject({ code: 'INVALID_INPUT' });
+    const shim = claude(scripted('"manual"'));
+    expect(await failure(shim.adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true })))).toMatchObject({ code: 'UNSUPPORTED', message: expect.stringContaining('.cmd shim') as unknown });
+    expect(shim.runner.started).toEqual([]);
+  });
+
+  it('reads the help once per program file', async () => {
+    const { adapter, runner } = claude(scripted('"manual"'), { exe: CLAUDE_EXE });
+    await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true }));
+    await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true }));
+    expect(runner.started.filter((s) => (s.args as string[])[0] === '--help')).toHaveLength(1);
+  });
+
+  it('read-only runs stay in plan mode with nothing pre-approved, and also deny secret files (except through a .cmd shim, which cannot carry the rules)', async () => {
+    const native = claude(scripted('"manual", "plan"'), { exe: CLAUDE_EXE });
+    await native.adapter.generate(request({ cwd: 'D:\\Games\\Alpha' }));
+    const args = generateArgs(native.runner);
+    expect(after(args, '--permission-mode')).toBe('plan');
+    expect(args).not.toContain('--allowedTools');
+    expect(after(args, '--disallowedTools')).toContain('Read(.env)');
+    const shim = claude(scripted('"manual", "plan"'));
+    await shim.adapter.generate(request({ cwd: 'D:\\Games\\Alpha' }));
+    expect(generateArgs(shim.runner)).not.toContain('--disallowedTools');
+  });
+});
+
+describe('Codex CLI: runs that change files (Step 15)', () => {
+  it('uses the workspace-write sandbox only for a writing run in a project folder', async () => {
+    const { adapter, runner } = codex(() => ({ stdout: fixture('codex', 'exec-ok.jsonl') }));
+    await adapter.generate(request({ cwd: 'D:\\Games\\Alpha', write: true }));
+    expect(runner.started[0]?.args).toEqual(['exec', '--json', '--sandbox', 'workspace-write', '--ephemeral', '-']);
+    expect(runner.started[0]?.purpose).toBe('Run Codex (can change files)');
+    expect(await failure(adapter.generate(request({ write: true })))).toMatchObject({ code: 'INVALID_INPUT' });
   });
 });
 

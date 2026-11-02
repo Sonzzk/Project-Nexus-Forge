@@ -9,6 +9,7 @@ import type { AgentRun } from '@shared/agents';
 import { createFakeApi, sampleEvent, samplePack, sampleProject, sampleReport, type FakeApi } from '../../../../test/mocks/fake-api';
 import { attachProviders, emptyUsage, emptyWindow, sampleModel, sampleProvider, type FakeProviders } from '../../../../test/mocks/fake-providers';
 import type { UsageRow } from '@shared/usage';
+import type { PermissionsView } from '@shared/permissions';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
@@ -826,7 +827,7 @@ describe('agent work on a task', () => {
     const runs = await within(panel).findByRole('list', { name: 'Runs' });
     expect(within(runs).getAllByRole('listitem')).toHaveLength(2);
     expect(within(runs).getAllByText('Queued')).toHaveLength(2);
-    const writer = within(runs).getByRole<HTMLButtonElement>('button', { name: /^Start · Upcoming · Step 15/ });
+    const writer = within(runs).getByRole<HTMLButtonElement>('button', { name: /^Start · Switched off/ });
     expect(writer.disabled).toBe(true);
 
     await user.click(within(runs).getByRole('button', { name: 'Start the Planner / architect run…' }));
@@ -881,7 +882,7 @@ describe('the AI Workbench', () => {
     });
     const queue = await screen.findByRole('list', { name: 'Queued and running' });
     expect(await within(queue).findByText(/Unreal Editor is running/)).toBeTruthy();
-    expect(within(queue).getByRole<HTMLButtonElement>('button', { name: /^Start · Upcoming · Step 15/ }).disabled).toBe(true);
+    expect(within(queue).getByRole<HTMLButtonElement>('button', { name: /^Start · Switched off/ }).disabled).toBe(true);
     await user.selectOptions(within(queue).getByLabelText('Priority of the Planner / architect run for Add jumping'), 'critical');
     expect(planning.runs[0]?.priority).toBe('critical');
     await user.click(within(queue).getByRole('button', { name: 'Cancel the Planner / architect run' }));
@@ -896,6 +897,75 @@ describe('the AI Workbench', () => {
     expect(fake.calls.some((c) => c.channel === 'queue:releaseLock')).toBe(true);
     expect(planning.lock).toBeNull();
     await waitFor(() => expect(screen.queryByText(/That run was interrupted/)).toBeNull());
+  });
+
+  const cmd = (label: string, overrides: Partial<PermissionsView['commands'][number]> = {}): PermissionsView['commands'][number] => ({ label, argv: ['npm', 'run', label.replace('npm run ', '')], body: 'vite build', risks: [], approval: null, ...overrides });
+
+  it('starts read-only: nothing is allowed until you say so in the separate window, and declining grants nothing', async () => {
+    const { user, planning } = await openWorkbench({ tasks: [sampleTask(1)], windowAnswer: false });
+    const panel = await screen.findByRole('region', { name: 'Permissions' });
+    expect(await within(panel).findByText('Not allowed. Agents can only read this project.')).toBeTruthy();
+    await user.click(within(panel).getByRole('button', { name: 'Allow for this project…' }));
+    expect(fake.calls.find((c) => c.channel === 'permissions:request')?.input).toEqual({ projectId: 'project-1', scope: 'project-writes' });
+    expect(planning.permissions.grants).toEqual([]);
+    expect(within(panel).getByText('Not allowed. Agents can only read this project.')).toBeTruthy();
+
+    planning.windowAnswer = true;
+    await user.click(within(panel).getByRole('button', { name: 'Allow for this project…' }));
+    const list = await within(panel).findByRole('list', { name: 'Active permissions' });
+    expect(within(list).getByText('Whole project')).toBeTruthy();
+    await user.click(within(list).getByRole('button', { name: 'Take back the permission for the whole project' }));
+    expect(await within(panel).findByText('Not allowed. Agents can only read this project.')).toBeTruthy();
+  });
+
+  it('the page never sends a granted flag: a request names only the project, a task and the scope', async () => {
+    const { user } = await openWorkbench({ tasks: [sampleTask(1)] });
+    const panel = await screen.findByRole('region', { name: 'Permissions' });
+    await user.click(within(panel).getByRole('button', { name: 'Allow for this project…' }));
+    const sent = fake.calls.filter((c) => c.channel === 'permissions:request').map((c) => Object.keys(c.input as object).sort());
+    expect(sent).toEqual([['projectId', 'scope']]);
+  });
+
+  it('lists the project commands with the destructive ones marked; approving asks in a window, running shows redacted output, a changed script cannot run', async () => {
+    const { user, planning } = await openWorkbench({
+      tasks: [sampleTask(1)],
+      permissions: { grants: [], approvals: [], commandsNote: '', commands: [cmd('npm run build'), cmd('npm run clean', { body: 'rm -rf dist', risks: ['rm deletes folders and everything in them'] }), cmd('npm run test', { approval: { id: 'a1', approvedAt: '2026-10-24T05:00:00.000Z', destructive: false, changed: true } })] },
+      commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'built in 2s', truncated: false },
+    });
+    const list = await screen.findByRole('list', { name: 'Project commands' });
+    expect(within(list).getByText('rm deletes folders and everything in them.')).toBeTruthy();
+    expect(within(list).getByText(/The script changed since then, so it will not run/)).toBeTruthy();
+    expect(within(list).queryByRole('button', { name: 'Run npm run test' })).toBeNull();
+    await user.click(within(list).getByRole('button', { name: 'Approve npm run build' }));
+    expect(fake.calls.find((c) => c.channel === 'commands:approve')?.input).toEqual({ projectId: 'project-1', label: 'npm run build' });
+    await user.click(await within(list).findByRole('button', { name: 'Run npm run build' }));
+    const out = await screen.findByLabelText('Command output');
+    expect(within(out).getByText('built in 2s')).toBeTruthy();
+    expect(planning.permissions.commands[0]?.approval).not.toBeNull();
+    await user.click(within(list).getByRole('button', { name: 'Take back the approval of npm run build' }));
+    expect(await within(list).findByRole('button', { name: 'Approve npm run build' })).toBeTruthy();
+  });
+
+  it('shows what you approved, where and when', async () => {
+    await openWorkbench({
+      tasks: [sampleTask(1)],
+      permissions: { grants: [], commands: [], commandsNote: 'No package.json was found in this project, so no commands are listed.', approvals: [{ id: 'ap1', projectId: 'project-1', taskId: null, runId: null, scope: 'destructive', what: 'Ran destructive command: npm run clean', where: 'D:\\Games\\Alpha', detail: '', at: '2026-10-24T05:00:00.000Z' }] },
+    });
+    const table = await screen.findByRole('table', { name: 'Approvals' });
+    expect(within(table).getByText('Ran destructive command: npm run clean')).toBeTruthy();
+    expect(within(table).getByText('Destructive operation')).toBeTruthy();
+    expect(within(table).getByText('D:\\Games\\Alpha')).toBeTruthy();
+    expect(screen.getByText(/No package.json was found/)).toBeTruthy();
+  });
+
+  it('a writing run can be started once writes are available; a task-level permission is requested from the task', async () => {
+    const { user } = await openWorkbench({ tasks: [sampleTask(1, { title: 'Add jumping' })], writesEnabled: true, runs: [queuedRun('run-2', { role: 'implementer', writeCapable: true, stepIndex: 1 })] });
+    const queue = await screen.findByRole('list', { name: 'Queued and running' });
+    expect(within(queue).getByRole<HTMLButtonElement>('button', { name: 'Start the Implementer run…' }).disabled).toBe(false);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Tasks and Roadmap/ }));
+    await user.click(await screen.findByText('Add jumping'));
+    await user.click(await screen.findByRole('button', { name: 'Allow project writes for this task…' }));
+    expect(fake.calls.find((c) => c.channel === 'permissions:request')?.input).toEqual({ projectId: 'project-1', taskId: 'task-1', scope: 'project-writes' });
   });
 
   it('saves the routing profile, the local model and a provider for one role', async () => {

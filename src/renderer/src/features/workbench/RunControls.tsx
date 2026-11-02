@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { FINAL_RUN_STATES, type AgentRun } from '@shared/agents';
 import type { IpcResult, SerializedError } from '@shared/errors';
-import { featureById, stateLabel } from '@shared/feature-status';
 import { PROVIDER_IDS, PROVIDER_LABELS, type ProviderId } from '@shared/providers';
 import { PROFILE_LABELS, type Route } from '@shared/routing';
 import { ROLE_LABELS } from '@shared/tasks';
@@ -34,7 +33,6 @@ export function RunControls({ run, writesEnabled, maxAttempts, onChanged, onErro
   const [route, setRoute] = useState<Route | undefined>();
   const [choice, setChoice] = useState<ProviderId | ''>('');
   const label = ROLE_LABELS[run.role];
-  const writes = featureById('action.write-run');
 
   const handle = async <T,>(result: Promise<IpcResult<T>>): Promise<T | undefined> => {
     const done = await result;
@@ -97,8 +95,8 @@ export function RunControls({ run, writesEnabled, maxAttempts, onChanged, onErro
   if (run.state === 'queued') {
     if (run.writeCapable && !writesEnabled)
       return (
-        <button type="button" className="btn" disabled title="Runs that change project files need the permission gate of Step 15">
-          Start · {writes === undefined ? 'Upcoming' : (stateLabel(writes) ?? 'Upcoming')}
+        <button type="button" className="btn" disabled title="Runs that change project files are switched off">
+          Start · Switched off
         </button>
       );
     return (

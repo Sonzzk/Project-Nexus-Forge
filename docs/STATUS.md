@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 14 · Usage tracking and limits: done (2026-10-24, tag `step-14`)
-**Next step:** Step 15 · Safe execution and permissions (Sonnet · High, changed from Opus at the user's request), see [ROADMAP.md](ROADMAP.md#step-15--safe-execution-and-permissions).
+**Current step:** Step 15 · Safe execution and permissions: done (2026-11-02, tag `step-15`)
+**Next step:** Step 16 · Diff review and code changes (Sonnet · High), see [ROADMAP.md](ROADMAP.md#step-16--diff-review-and-code-changes).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -19,6 +19,7 @@
 - **Step 12.** Provider contract, Ollama / Claude Code / Codex CLI adapters, the Integrations page, a dashboard connectivity card, and AI-assisted step suggestions and document drafts that are only ever previewed (ARCHITECTURE.md section 25, D-037). Verified by all six gates and by live status checks on this PC (below).
 - **Step 13.** Routing profiles with per-role and per-run choices, the run queue (priorities, holds with reasons, one run per provider, duplicate-launch refusal, cancel of owned programs only), the per-project writer lock that survives restarts, bounded and confirmed retries, the resource monitor and the local-inference policy, the AI Workbench and the Active agent sessions card (ARCHITECTURE.md section 26, D-038). Verified by all six gates (below).
 - **Step 14.** The local usage log (`usage_log`: task, project, provider, model, times, status, and token counts or a cost estimate only when the provider returned them), launch limits per day, project and task checked before the confirmation, the Usage and limits section on the Integrations page and a dashboard card (ARCHITECTURE.md section 27, D-039). Verified by all six gates (below).
+- **Step 15.** Scoped permissions granted only through native windows, the pre-write gate with Git state, uncommitted-work warning and a checkpoint reference, approved commands bound to the script text, secret protection for agents, Git init, and write-capable Claude Code and Codex runs behind all of it (ARCHITECTURE.md section 28, D-040). Verified by all six gates (below); the first writing run was made on a throwaway project with a test double, not a provider.
 
 ## In progress
 - Nothing.
@@ -28,7 +29,7 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 15: permission scopes with approvals stored (what, where, when), the pre-write gate (Git status, dirty-tree warning, change scope, confirmation, checkpoint), approved commands with a destructive-pattern block, secret protection, and only then write-capable Claude Code and Codex runs (`writesEnabled` in `src/main/index.ts`, `action.write-run` in the manifest). It builds on the queue's writer lock and `checkWrites`.
+- Step 16: change tracking per session against a recorded base, unified diffs, approve (commit), reject (restore only the session's files) and revert (`git revert`), named checkpoints (the `refs/gdcc/checkpoints/` references from Step 15 are the base), Git LFS warning, optional worktrees tied to the writer lock.
 
 ## Application feature status
 The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
@@ -57,6 +58,15 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 15
+- **Requested:** permission scopes per project and task with approvals stored (what, where, when) that only a main-process dialog can grant; a pre-write gate (Git status, uncommitted-work warning, change scope, confirmation, approved task and folder recorded, `git init` offer, optional checkpoint); approved commands with a destructive-pattern block and no shell strings; secret protection; write-capable Claude Code and Codex runs through the gate with the CLIs' own permission rules kept.
+- **Changed:** `src/main/security/` (`permissions.ts`, `gate.ts`, `commands.ts`, `agent-rules.ts`), `src/shared/permissions.ts`, migration `0010_permissions.sql`, `GitService.init|checkpoint`, `GenerateRequest.write` and the Claude Code and Codex arguments, queue (`writes` gate, `redact`, `write` and checkpoint in the execute request), redactor patterns, seven channels and the Permissions panel, task-level allow button, Git init button, settings `safety.*`, manifest `action.write-run` available, `test/e2e/permissions.e2e.ts`; ARCHITECTURE.md section 28, D-040, KI-019, DATA.md, CHANGELOG and this file.
+- **Verified (2026-11-02):** `npm run typecheck`, `lint`, `test` (974 of 974), `build`, `check:docs` and `test:e2e` (43 of 43, including a grant through the window, a decline, a restart, an approved command run and `git init` in the real app). No provider was called and no usage was spent. A flaky end-to-end handoff test (it typed before the draft landed) was fixed.
+- **Unfinished:** nothing in Step 15. Not built on purpose: listing and restoring checkpoints and diff review (Step 16), a live session view (Step 17), engine commands (Steps 18 to 21).
+- **Known risks:** KI-019 (no live writing run; agents cannot run commands; `.cmd` shim installs; the classifier is a net).
+- **Relevant files:** `src/main/security/gate.ts`, `src/main/security/permissions.ts`, `src/main/security/commands.ts`, `src/main/providers/cli.ts`, `src/main/planning/queue.ts`.
+- **Next task:** Step 16 · Diff review and code changes.
 
 ## Handoff: Step 14
 - **Requested:** an honest local usage log (task, provider, model if known, times, status, usage or cost only when an authorized source returns it), provider-reported usage parsed only where documented, configurable limits on cloud launches per day, project and task and on retries enforced before launch with a clear reason, a usage page and dashboard summary, never switching to metered billing.

@@ -156,6 +156,8 @@ test('handoffs: draft, save, and the latest one shows on the dashboard after a r
     await first.page.getByRole('tab', { name: 'Session handoffs' }).click();
     const form = first.page.getByRole('region', { name: 'New session handoff' });
     await form.getByRole('button', { name: 'Draft from the project' }).click();
+    // The draft arrives after Git has been read and replaces the fields, so typing before it lands would be overwritten.
+    await expect(form.getByText(/^Drafted from Git and the latest audit/)).toBeVisible();
     await form.getByLabel('What was requested').fill('Add the dash move');
     await form.getByLabel('Next recommended task').fill('Tune the dash distance');
     await form.getByRole('button', { name: 'Save the handoff' }).click();

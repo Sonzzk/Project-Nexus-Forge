@@ -66,6 +66,8 @@ export interface AgentRequest {
   ownerId: string;
   /** The run's task, for the usage log and the per-task limit. */
   taskId: string | null;
+  /** The run may change project files; the queue only sets this after the permission gate approved it. */
+  write: boolean;
 }
 
 interface RequestExtra {
@@ -75,6 +77,7 @@ interface RequestExtra {
   signal?: AbortSignal;
   onApproved?: () => void;
   ownerId?: string;
+  write?: boolean;
   /** What the usage log and the launch limits attribute the request to. */
   projectId?: string;
   taskId?: string | null;
@@ -236,7 +239,7 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       extra.onApproved?.(); // the queue moves its run to running here; if that refuses, nothing is sent
       const usageId = usage.begin(launch);
       try {
-        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }) });
+        const output = await adapters[id].generate({ model: choice.model, prompt: text, signal, ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }), ...(extra.ownerId === undefined ? {} : { ownerId: extra.ownerId }), ...(extra.write === true ? { write: true } : {}) });
         markSuccess(id);
         usage.finish(usageId, { status: 'completed', usage: output.usage });
         const truncated = output.text.length > MAX_OUTPUT;
@@ -253,11 +256,12 @@ export function createProviderService(options: ProviderServiceOptions): Provider
   }
 
   /** What running in the project folder means, for the confirmation. Throws when the folder is gone. */
-  const inProject = (rootPath: string, provider: ProviderId): string => {
+  const inProject = (rootPath: string, provider: ProviderId, write = false): string => {
     if (!existsSync(rootPath)) throw new AppError('NOT_FOUND', `The folder ${rootPath} could not be found.`, { hint: 'Reconnect the drive, then try again.' });
     // `claude -p` runs the hooks of .claude/settings.json and connects the servers of .mcp.json without asking (docs, headless mode).
     const runs = provider === 'claude-code' ? ['.claude/settings.json', '.mcp.json'].filter((file) => existsSync(join(rootPath, file))) : [];
-    return `The program runs in ${rootPath} in read-only mode and can read files there, which then go to ${PROVIDER_LABELS[provider]}.${runs.length > 0 ? `\n\nThis project has ${runs.join(' and ')}. Claude Code runs the hooks and starts the servers they define without asking, which means running code from the project.` : ''}`;
+    const access = !write ? 'in read-only mode and can read files there' : provider === 'codex' ? 'in Codex’s workspace-write sandbox: it can read and change files there and run commands inside that sandbox' : 'with permission to edit files there only (other commands are denied, and so are secret files)';
+    return `The program runs in ${rootPath} ${access}, and what it reads goes to ${PROVIDER_LABELS[provider]}.${runs.length > 0 ? `\n\nThis project has ${runs.join(' and ')}. Claude Code runs the hooks and starts the servers they define without asking, which means running code from the project.` : ''}`;
   };
 
   const project = (id: string) => {
@@ -363,12 +367,12 @@ export function createProviderService(options: ProviderServiceOptions): Provider
       return runRequest(choice, prompt, 'project-session', { cwd: p.rootPath, label: 'This project session', projectId, detail: inProject(p.rootPath, choice.provider) });
     },
 
-    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId, taskId }) {
+    async runAgent({ projectId, choice, prompt, note, signal, onApproved, ownerId, taskId, write }) {
       const p = project(projectId);
-      const extra = { label: 'This agent run', signal, onApproved, ownerId, projectId, taskId };
+      const extra = { label: 'This agent run', signal, onApproved, ownerId, projectId, taskId, write };
       // Ollama only answers the text it is given; the coding agents run read-only in the project folder.
       if (choice.provider === 'ollama') return runRequest(choice, prompt, 'agent-run', { ...extra, detail: note });
-      return runRequest(choice, prompt, 'agent-run', { ...extra, cwd: p.rootPath, detail: `${note}\n\n${inProject(p.rootPath, choice.provider)}` });
+      return runRequest(choice, prompt, 'agent-run', { ...extra, cwd: p.rootPath, detail: `${note}\n\n${inProject(p.rootPath, choice.provider, write)}` });
     },
   };
 }

@@ -7,6 +7,20 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 15 · Safe execution and permissions (2026-11-02, tag `step-15`)
+
+### Added
+- Scoped permissions: everything stays read-only until you allow project writes for a project or one task, in a separate window that agents and pages cannot answer. Take-backs are immediate, and an approvals log shows what you approved, where and when.
+- A pre-write gate before every run that changes files: the Git state, a warning about uncommitted work (nothing is ever stashed, reset or discarded), the likely change scope, your confirmation, and a checkpoint saved as a Git reference without touching any file.
+- Write-capable Claude Code and Codex runs behind the gate. Claude Code may edit files only: commands, deletes, pushes, secret files and the files that run code (agent settings, hooks, MCP lists, CI) are denied. Codex uses its own workspace-write sandbox.
+- Approved commands: the project's package.json scripts are listed, destructive-looking ones are marked, each is approved by you, bound to the script text and run only from the app through the process runner. Destructive ones ask again every time.
+- "Create Git repository…" on the Git and Changes page, explained first and refused where a repository exists.
+- Secret protection: more secret formats are redacted, agent answers are redacted before they are stored, and the denied-file list that protects context packs now also protects agent runs.
+- Schema v10, seven channels, two settings. Decision D-040, known issue KI-019.
+
+### Changed
+- Writing runs are no longer disabled on the Workbench; they are refused until a permission is granted.
+
 ## Step 14 · Usage tracking and limits (2026-10-24, tag `step-14`)
 
 ### Added

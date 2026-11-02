@@ -338,7 +338,7 @@ describe('task breakdown and document drafting (the first uses of a provider)', 
 
 describe('a queued agent run', () => {
   const agentRun = (e: Awaited<ReturnType<typeof env>>, choice: { provider: ProviderId; model: string }, extra: { signal?: AbortSignal; onApproved?: () => void } = {}) =>
-    e.service.runAgent({ projectId: e.project.id, choice, prompt: 'You are the planner.', note: 'Routing (Balanced): because.\nCost: not free.', signal: extra.signal ?? new AbortController().signal, onApproved: extra.onApproved ?? (() => undefined), ownerId: 'run-1', taskId: null });
+    e.service.runAgent({ projectId: e.project.id, choice, prompt: 'You are the planner.', note: 'Routing (Balanced): because.\nCost: not free.', signal: extra.signal ?? new AbortController().signal, onApproved: extra.onApproved ?? (() => undefined), ownerId: 'run-1', taskId: null, write: false });
 
   it('a coding agent runs read-only in the project folder, owned by the run, after a confirmation that carries the queue\'s note', async () => {
     const e = await env();

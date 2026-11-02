@@ -64,8 +64,8 @@ test('a workflow is shown with its providers and blockers, needs the plan approv
     const runs = panel.getByRole('list', { name: 'Runs' });
     await expect(runs.getByRole('listitem')).toHaveCount(2);
     await expect(runs).toContainText('Queued');
-    // The implementer would change files, which waits for Step 15; nothing was started here.
-    await expect(runs.getByRole('button', { name: /^Start · Upcoming · Step 15/ })).toBeDisabled();
+    // The implementer would change files: it can be asked to start, but only once project writes are allowed; nothing was started here.
+    await expect(runs.getByRole('button', { name: 'Start the Implementer run…' })).toBeEnabled();
     await expect(runs.getByRole('button', { name: 'Start the Planner / architect run…' })).toBeEnabled();
     expect(snapshotTree(folder)).toEqual(before);
   } finally {

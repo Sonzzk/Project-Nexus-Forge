@@ -20,6 +20,7 @@ import { createClaudeCodeAdapter, createCodexAdapter, createOllamaAdapter, creat
 import { agentTables, createAgentService, createPlanningService, createRunQueue, createTaskService, planningTables } from './planning';
 import { createResourceMonitor } from './resources';
 import { createUsageService, usageTables } from './usage';
+import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
 import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
@@ -306,7 +307,33 @@ async function startServices(): Promise<void> {
     return { snapshot, verdict };
   };
 
-  // The run queue: routes runs, starts them in order, owns the writer lock. Read-only until Step 15's permission gate exists.
+  // Permissions, the pre-write gate and approved commands (Step 15). Grants come only from native windows opened here.
+  const permissions = createPermissionService({ db, projects, activity, confirm: (options) => ui.confirm(options) });
+  const gate = createWriteGate({
+    git,
+    projects,
+    permissions,
+    activity,
+    confirm: (options) => ui.confirm(options),
+    task: (id) => {
+      const found = tasks.get(id);
+      return { title: found.title, files: found.files };
+    },
+    checkpoint: () => settingsStore.get('safety.checkpointBeforeWrites'),
+  });
+  const commands = createCommandService({
+    db,
+    projects,
+    permissions,
+    activity,
+    runner,
+    redactor,
+    confirm: (options) => ui.confirm(options),
+    locate: (name) => locateProgram([`${name}.cmd`, `${name}.exe`]),
+    timeoutMs: () => settingsStore.get('safety.commandTimeoutSeconds') * 1000,
+  });
+
+  // The run queue: routes runs, starts them in order, owns the writer lock. Runs that change files pass the gate first.
   const queue = createRunQueue({
     db,
     agents,
@@ -314,7 +341,7 @@ async function startServices(): Promise<void> {
     projects,
     activity,
     logger: logger.child('queue'),
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
     routing: () => ({
@@ -328,7 +355,8 @@ async function startServices(): Promise<void> {
     recheckMs: () => settingsStore.get('inference.monitorIntervalSeconds') * 1000,
     confirm: (options) => ui.confirm(options),
     enforceLimits: (input) => providers.checkLaunch(input),
-    writesEnabled: false,
+    writes: gate,
+    redact: (text) => redactor.redact(text),
   });
   queue.recover();
   shutdown.register('agent-queue', 25, () => queue.shutdown());
@@ -349,6 +377,9 @@ async function startServices(): Promise<void> {
     providers,
     queue,
     usage,
+    permissions,
+    commands,
+    gate,
     resources: () => report(),
     git,
     reveal: (fullPath) => shell.showItemInFolder(fullPath),

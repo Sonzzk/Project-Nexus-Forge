@@ -15,6 +15,7 @@ import { createRateLimiter } from './rate-limit';
 import { createProjectRegistry } from '../projects';
 import { createProviderService } from '../providers';
 import { createUsageService } from '../usage';
+import { createCommandService, createPermissionService, createWriteGate } from '../security';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -78,9 +79,13 @@ async function setup() {
     env: () => ({}),
     sandboxDir: () => 'C:\\sandbox',
   });
+  const confirmUi = () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer));
+  const permissions = createPermissionService({ db, projects, activity, confirm: confirmUi });
+  const gate = createWriteGate({ git, projects, permissions, activity, confirm: confirmUi, task: (id) => ({ title: tasks.get(id).title, files: [] }), checkpoint: () => false });
+  const commands = createCommandService({ db, projects, permissions, activity, runner: { start: () => { throw new Error('no process'); } } as never, redactor, confirm: confirmUi, locate: () => undefined, timeoutMs: () => 1000 });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
-    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId }),
+    execute: (r) => providers.runAgent({ projectId: r.projectId, choice: { provider: r.provider, model: r.model }, prompt: r.prompt, note: r.note, signal: r.signal, onApproved: r.onApproved, ownerId: r.runId, taskId: r.taskId, write: r.write }),
     enforceLimits: (input) => providers.checkLaunch(input),
     availability: async () => availabilityFrom(await providers.list()),
     providerBusy: (id) => providers.busy(id),
@@ -88,7 +93,7 @@ async function setup() {
     localPolicy: () => Promise.resolve({ allowed: true, blocks: [], warnings: [] }),
     recheckMs: () => 60_000,
     confirm: () => (uiCalls.push('confirm'), Promise.resolve(uiAnswer)),
-    writesEnabled: false,
+    redact: (text) => redactor.redact(text),
   });
   const snapshot = { at: '2026-10-24T12:00:00.000Z', cpuPercent: 12, ramFreeMiB: 40_000, ramTotalMiB: 65_000, gpus: [], gpuNote: 'nvidia-smi was not found', heavyApps: [], appsNote: '' };
   const storage = createStorageService({
@@ -118,6 +123,9 @@ async function setup() {
     providers,
     queue,
     usage,
+    permissions,
+    commands,
+    gate,
     resources: () => Promise.resolve({ snapshot, verdict: { allowed: true, blocks: [], warnings: ['Free VRAM could not be measured.'] } }),
     git,
     reveal: (full) => void revealed.push(full),
@@ -446,6 +454,35 @@ describe('agent channels', () => {
     expect(await call('resources:check')).toMatchObject({ ok: true, value: { verdict: { allowed: true } } });
     expect(await call('providers:generate', { choice: { provider: 'ollama', model: 'llama3.2:1b' }, prompt: 'hi', purpose: 'agent-run' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
     expect(await call('queue:releaseLock', { projectId: 'nope' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('permissions: a request only opens the native window; declining grants nothing, and the page cannot say yes for the person', async () => {
+    const { call, taskId } = await withTask();
+    const projectId = ((await call('projects:list')) as { ok: true; value: { id: string }[] }).value[0]?.id ?? '';
+    uiAnswer = false;
+    expect(await call('permissions:request', { projectId, scope: 'project-writes' })).toMatchObject({ ok: true, value: { permission: null } });
+    expect(await call('permissions:view', { projectId })).toMatchObject({ ok: true, value: { grants: [] } });
+    // a request that tries to carry the answer, a bigger scope, or an unknown field is refused before anything happens
+    for (const bad of [{ projectId, scope: 'project-writes', granted: true }, { projectId, scope: 'destructive' }, { projectId, scope: 'commands' }, { projectId, scope: 'project-writes', taskId, approved: true }])
+      expect(await call('permissions:request', bad)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(await call('permissions:view', { projectId })).toMatchObject({ ok: true, value: { grants: [] } });
+    uiAnswer = true;
+    expect(await call('permissions:request', { projectId, taskId, scope: 'project-writes' })).toMatchObject({ ok: true, value: { permission: { taskId, scope: 'project-writes' } } });
+    const view = (await call('permissions:view', { projectId })) as { ok: true; value: { grants: { id: string }[]; approvals: unknown[] } };
+    expect(view.value.grants).toHaveLength(1);
+    expect(view.value.approvals).toHaveLength(1);
+    expect(await call('permissions:revoke', { id: view.value.grants[0]?.id })).toMatchObject({ ok: true, value: { revokedAt: expect.any(String) as unknown } });
+    expect(await call('permissions:request', { projectId: 'missing', scope: 'project-writes' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('commands and git init: unknown commands are refused, and an approval needs the window', async () => {
+    const { call } = await withTask();
+    const projectId = ((await call('projects:list')) as { ok: true; value: { id: string }[] }).value[0]?.id ?? '';
+    expect(await call('commands:approve', { projectId, label: 'npm run nothing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    expect(await call('commands:run', { id: 'nope' })).toMatchObject({ ok: false, error: { code: 'PERMISSION_REQUIRED' } });
+    expect(await call('commands:run', { id: 'x', command: 'rm -rf /' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    uiAnswer = false;
+    expect(await call('git:init', { projectId })).toMatchObject({ ok: true, value: { created: false } });
   });
 
   it('cannot be asked to start a run: there is no channel that moves a run to running, and bad input is refused', async () => {

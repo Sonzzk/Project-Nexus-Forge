@@ -9,6 +9,7 @@ import { formatTime } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
 import { useQueue } from '../../lib/queue';
 import { useSettings } from '../../lib/settings';
+import { PermissionsPanel } from './PermissionsPanel';
 import { RunControls } from './RunControls';
 
 const gb = (mib: number | null): string => (mib === null ? 'unknown' : `${(mib / 1024).toFixed(1)} GB`);
@@ -264,7 +265,7 @@ function InferenceSection() {
 
 /**
  * The AI Workbench (spec §11–§13, §15): the run queue of the selected project with its holds, priorities and the writer lock,
- * the routing settings, and the local-inference policy. Agent runs are read-only until Step 15.
+ * the permissions, the routing settings, and the local-inference policy. Runs that change files need a permission you grant (Step 15).
  */
 export function WorkbenchPage() {
   const { selected } = useProjects();
@@ -283,7 +284,7 @@ export function WorkbenchPage() {
       <header className="page__head">
         <h1>AI Workbench</h1>
         <p className="muted">
-          Start agent runs, see what waits and why, and choose how runs are routed. Every run is read-only until Step 15, and anything sent to a cloud service is
+          Start agent runs, see what waits and why, and choose how runs are routed. Runs are read-only unless you allow project writes below, and anything sent to a cloud service is
           confirmed first in a window that names the provider and what it costs. The live session view arrives in Step 17.
         </p>
       </header>
@@ -330,6 +331,7 @@ export function WorkbenchPage() {
           )}
         </section>
       )}
+      <PermissionsPanel />
       <RoutingSection />
       <InferenceSection />
     </div>

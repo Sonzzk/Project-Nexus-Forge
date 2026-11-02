@@ -85,7 +85,12 @@ test('a documentation run is routed to the local model, runs from the queue and 
     await page.getByRole('button', { name: /^AI Workbench/ }).click();
     const queue = page.getByRole('list', { name: 'Queued and running' });
     await expect(queue.getByRole('listitem')).toHaveCount(3);
-    await expect(queue.getByRole('button', { name: /^Start · Upcoming · Step 15/ })).toBeDisabled();
+    // The implementer may be asked to start, but nothing lets it write until a person allows project writes (Step 15).
+    await queue.getByRole('button', { name: 'Start the Implementer run…' }).click();
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('not allowed to change files in this project yet');
+    await expect(queue.getByRole('button', { name: 'Start the Implementer run…' })).toBeEnabled();
+    expect(await confirmations(app)).toEqual([]); // refused before any window or send
 
     await queue.getByRole('button', { name: 'Start the Documentation run…' }).click();
     const route = page.getByLabel('Routing decision');

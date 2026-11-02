@@ -50,7 +50,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   // Sidebar, in the order of spec §5.
   nav('dashboard', 'Dashboard', 'available', 5),
   nav('projects', 'Projects', 'available', 6),
-  nav('workbench', 'AI Workbench', 'available', 13, 'Run queue, routing and the local-inference policy; read-only runs until Step 15, the live session view in Step 17.'),
+  nav('workbench', 'AI Workbench', 'available', 13, 'Run queue, routing, permissions and approved commands, and the local-inference policy; the live session view arrives in Step 17.'),
   nav('tasks', 'Tasks and Roadmap', 'available', 10, 'Board, list and milestone roadmap, with agent runs queued from each task.'),
   nav('context', 'Project Context', 'available', 9, 'Project memory, context packs and session handoffs.'),
   nav('git', 'Git and Changes', 'available', 7, 'Read-only status and recent commits; diff review and revert arrive in Step 16.'),
@@ -128,8 +128,9 @@ export const FEATURES: readonly FeatureStatus[] = [
     kind: 'action',
     label: 'Run an agent that changes project files',
     section: 'workbench',
-    state: 'upcoming',
+    state: 'available',
     step: 15,
+    note: 'Needs project writes allowed on the AI Workbench; each run is confirmed with the Git state and a checkpoint is saved first.',
   },
 
   // Dashboard cards (spec §5 and §20). Later steps flip these to available as they land.

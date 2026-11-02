@@ -11,6 +11,7 @@ import type { ResourceReport } from '@shared/resources';
 import type { AuditService, HandoffService, MemoryService, PackService } from '../scanning';
 import type { StorageService } from '../storage';
 import type { UsageService } from '../usage';
+import type { CommandService, PermissionService, WriteGate } from '../security';
 import { resolveInside } from '../security';
 import type { SettingsStore } from '../settings';
 import type { Ipc } from './handle';
@@ -32,6 +33,9 @@ export interface HandlerServices {
   providers: ProviderService;
   queue: RunQueue;
   usage: UsageService;
+  permissions: PermissionService;
+  commands: CommandService;
+  gate: WriteGate;
   /** A fresh resource snapshot with the local-inference verdict. */
   resources: () => Promise<ResourceReport>;
   git: GitService;
@@ -167,6 +171,21 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('queue:releaseLock', ({ projectId }) => services.queue.releaseLock(projectId));
   ipc.handle('resources:check', () => services.resources());
   ipc.handle('usage:summary', ({ projectId }) => services.usage.summary(projectId));
+  ipc.handle('permissions:view', ({ projectId }) => ({
+    grants: services.permissions.grants(projectId),
+    approvals: services.permissions.approvals(projectId),
+    ...services.commands.discover(projectId),
+    commandsNote: services.commands.discover(projectId).note,
+  }));
+  ipc.handle('permissions:request', async ({ projectId, taskId, scope }) => ({ permission: await services.permissions.request({ projectId, taskId, scope }) }));
+  ipc.handle('permissions:revoke', ({ id }) => services.permissions.revoke(id));
+  ipc.handle('commands:approve', async ({ projectId, label }) => ({ approved: (await services.commands.approve(projectId, label)) !== null }));
+  ipc.handle('commands:revoke', ({ id }) => {
+    services.commands.revoke(id);
+    return { revoked: true as const };
+  });
+  ipc.handle('commands:run', ({ id }) => services.commands.run(id));
+  ipc.handle('git:init', ({ projectId }) => services.gate.initGit(projectId));
   ipc.handle('usage:list', ({ projectId, limit }) => services.usage.list({ projectId, limit }));
 
   ipc.handle('providers:list', () => services.providers.list());
