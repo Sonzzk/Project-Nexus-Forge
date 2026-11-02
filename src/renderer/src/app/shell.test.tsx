@@ -14,6 +14,7 @@ import type { Review } from '@shared/changes';
 import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
+import { attachEngines, sampleUnrealView, type FakeEngines } from '../../../../test/mocks/fake-engines';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -874,6 +875,15 @@ describe('tasks and roadmap', () => {
     expect(screen.getByRole('region', { name: 'Task Fix the crash on load' })).toBeTruthy(); // the new task opens for editing
   });
 
+  it('suggests only the systems you confirmed in the Backrooms profile as subsystems, and nothing while the profile is off', async () => {
+    const user = await openTasks();
+    attachEngines(fake, { profile: { enabled: true, confirmed: ['level', 'audio'], checked: [] } });
+    await user.click(screen.getByRole('button', { name: 'New task…' }));
+    const form = await screen.findByRole('region', { name: 'New task' });
+    await waitFor(() => expect(form.querySelectorAll('#task-subsystems option')).toHaveLength(2));
+    expect([...form.querySelectorAll('#task-subsystems option')].map((o) => o.getAttribute('value'))).toEqual(['Level layout and environment art', 'Player audio and environmental sound']);
+  });
+
   it('moves a task along its lifecycle with only the valid next steps offered, and shows the board columns change', async () => {
     const user = await openTasks({ tasks: [sampleTask(1, { title: 'Add jumping' })] });
     await user.click(await column('Inbox').findByRole('button', { name: /Add jumping/ }));
@@ -1139,7 +1149,16 @@ describe('the AI Workbench', () => {
     await waitFor(() => expect(screen.queryByText(/That run was interrupted/)).toBeNull());
   });
 
-  const cmd = (label: string, overrides: Partial<PermissionsView['commands'][number]> = {}): PermissionsView['commands'][number] => ({ label, argv: ['npm', 'run', label.replace('npm run ', '')], body: 'vite build', risks: [], approval: null, ...overrides });
+  const cmd = (label: string, overrides: Partial<PermissionsView['commands'][number]> = {}): PermissionsView['commands'][number] => ({ label, argv: ['npm', 'run', label.replace('npm run ', '')], body: 'vite build', risks: [], source: 'script', writes: false, approval: null, ...overrides });
+
+  it('marks an engine command and says it writes files in the project, so it is not mistaken for a script', async () => {
+    const { user } = await openWorkbench({ tasks: [sampleTask(1)], permissions: { grants: [], approvals: [], commands: [cmd('Build Backrooms (Win64 Development)', { source: 'engine', writes: true, argv: ['C:\\Engines\\UE_5.5\\Engine\\Build\\BatchFiles\\Build.bat'], body: 'Build.bat Backrooms Win64 Development' })], commandsNote: '' } });
+    const list = await screen.findByRole('list', { name: 'Project commands' });
+    expect(within(list).getByText('engine command')).toBeTruthy();
+    expect(within(list).getByText('writes files in the project')).toBeTruthy();
+    await user.click(within(list).getByRole('button', { name: 'Approve Build Backrooms (Win64 Development)' }));
+    expect(fake.calls.find((c) => c.channel === 'commands:approve')?.input).toEqual({ projectId: 'project-1', label: 'Build Backrooms (Win64 Development)' });
+  });
 
   it('starts read-only: nothing is allowed until you say so in the separate window, and declining grants nothing', async () => {
     const { user, planning } = await openWorkbench({ tasks: [sampleTask(1)], windowAnswer: false });
@@ -1170,7 +1189,7 @@ describe('the AI Workbench', () => {
     const { user, planning } = await openWorkbench({
       tasks: [sampleTask(1)],
       permissions: { grants: [], approvals: [], commandsNote: '', commands: [cmd('npm run build'), cmd('npm run clean', { body: 'rm -rf dist', risks: ['rm deletes folders and everything in them'] }), cmd('npm run test', { approval: { id: 'a1', approvedAt: '2026-10-24T05:00:00.000Z', destructive: false, changed: true } })] },
-      commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'built in 2s', truncated: false },
+      commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'built in 2s', truncated: false, logId: null },
     });
     const list = await screen.findByRole('list', { name: 'Project commands' });
     expect(within(list).getByText('rm deletes folders and everything in them.')).toBeTruthy();
@@ -1238,9 +1257,11 @@ describe('the AI Workbench', () => {
 
 describe('integrations and AI help', () => {
   let providers: FakeProviders;
-  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}) => {
+  let engines: FakeEngines;
+  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}) => {
     const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
     providers = attachProviders(fake, seed);
+    engines = attachEngines(fake, engineSeed);
     attachPlanning(fake);
     await user.click(within(sidebar()).getByRole('button', { name: /^Integrations/ }));
     await screen.findByRole('heading', { name: 'Integrations' });
@@ -1411,5 +1432,95 @@ describe('integrations and AI help', () => {
     expect(await within(card).findByText(/Ollama \(local\)/)).toBeTruthy();
     expect(within(card).getByText(/Working 1\.0\.0/)).toBeTruthy();
     expect(within(card).getByText(/Not installed/)).toBeTruthy();
+  });
+
+  describe('Unreal Engine and the Backrooms profile', () => {
+    it('shows the installed engines (an incomplete one says so), the project facts, the capability report and the command list', async () => {
+      await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Unreal Engine' });
+      const installed = await within(card).findByRole('table', { name: 'Installed engines' });
+      expect(within(installed).getByText('UE_5.5')).toBeTruthy();
+      expect(within(installed).getByText('incomplete')).toBeTruthy();
+      expect(within(installed).getByText('Incomplete install: the version file is missing.')).toBeTruthy();
+      const project = within(card).getByLabelText('Unreal project Backrooms');
+      expect(within(project).getByText(/C\+\+: Backrooms \(Game\), BackroomsEditor \(Editor\)/)).toBeTruthy();
+      expect(within(project).getByText('UE_5.5: the launcher entry for 5.5')).toBeTruthy();
+      expect(within(project).getByText(/12 assets, 3\.0 MB/)).toBeTruthy();
+      const capabilities = within(card).getByRole('table', { name: 'Capability report' });
+      expect(within(capabilities).getByText('Implemented')).toBeTruthy();
+      expect(within(capabilities).getByText('Unavailable')).toBeTruthy();
+      expect(within(card).getByText('Build Backrooms (Win64 Development)')).toBeTruthy();
+      expect(within(card).getByText(/Agents cannot run these commands/)).toBeTruthy();
+    });
+
+    it('says plainly when the project is not Unreal, or when no engine is installed', async () => {
+      await openIntegrations({}, { view: sampleUnrealView({ isUnreal: false, project: null, engines: [], resolved: null, capabilities: [], commands: [] }) });
+      const card = await screen.findByRole('region', { name: 'Unreal Engine' });
+      expect(await within(card).findByText(/has no \.uproject at the top of its folder/)).toBeTruthy();
+      expect(within(card).getByText('No Unreal Engine was found on this PC.')).toBeTruthy();
+    });
+
+    it('opens folders and the editor only by naming a target, never a path, and reports that the editor was handed to Windows', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Unreal Engine' });
+      await user.click(await within(card).findByRole('button', { name: 'Open Config' }));
+      await user.click(within(card).getByRole('button', { name: 'Open in Unreal Editor…' }));
+      expect(engines.opened).toEqual(['config', 'project']);
+      expect(fake.calls.filter((c) => c.channel === 'engines:open').map((c) => c.input)).toEqual([
+        { projectId: 'project-1', target: 'config' },
+        { projectId: 'project-1', target: 'project' },
+      ]);
+      expect(await screen.findByText(/Handed to Windows/)).toBeTruthy();
+    });
+
+    it('adds an engine folder through the native dialog and removes it from the list without deleting anything', async () => {
+      const user = await openIntegrations({}, { pick: 'D:\\Epic\\UE_Source' });
+      const card = await screen.findByRole('region', { name: 'Unreal Engine' });
+      await user.click(await within(card).findByRole('button', { name: 'Add an engine folder…' }));
+      const added = await within(card).findByRole('list', { name: 'Engine folders you added' });
+      expect(within(added).getByText('D:\\Epic\\UE_Source')).toBeTruthy();
+      expect(fake.calls.find((c) => c.channel === 'engines:addPath')?.input).toEqual({}); // the page never names the folder
+      await user.click(within(added).getByRole('button', { name: /^Remove the engine folder D:\\Epic\\UE_Source/ }));
+      await waitFor(() => expect(within(card).queryByRole('list', { name: 'Engine folders you added' })).toBeNull());
+      expect(fake.calls.find((c) => c.channel === 'engines:removePath')?.input).toEqual({ index: 0 });
+    });
+
+    it('keeps the output of earlier approved commands and shows one on request', async () => {
+      const user = await openIntegrations(
+        {},
+        { history: [{ id: 'run-1', label: 'Build Backrooms (Win64 Development)', startedAt: '2026-10-24T09:00:00.000Z', endedAt: '2026-10-24T09:05:00.000Z', status: 'exited', exitCode: 1 }], logs: { 'run-1': 'error C2065: undeclared identifier' } },
+      );
+      const card = await screen.findByRole('region', { name: 'Unreal Engine' });
+      const list = await within(card).findByRole('list', { name: 'Command logs' });
+      expect(within(list).getByText(/exit code 1/)).toBeTruthy();
+      await user.click(within(list).getByRole('button', { name: /^Show the log of Build Backrooms/ }));
+      expect(await within(card).findByText('error C2065: undeclared identifier')).toBeTruthy();
+    });
+
+    it('starts the Backrooms profile off with nothing confirmed, shows hints only as hints, and keeps what you confirm', async () => {
+      const user = await openIntegrations();
+      const profile = await screen.findByRole('region', { name: 'Backrooms game profile' });
+      expect(within(profile).getByText(/The profile is off/)).toBeTruthy();
+      expect(within(profile).queryByRole('list', { name: 'Game systems' })).toBeNull();
+      await user.click(within(profile).getByRole('checkbox', { name: 'Use this profile' }));
+      const systems = await within(profile).findByRole('list', { name: 'Game systems' });
+      expect(within(systems).getAllByRole('checkbox')).toHaveLength(17);
+      expect(within(systems).getAllByRole('checkbox').every((box) => !(box as HTMLInputElement).checked)).toBe(true);
+      expect(within(systems).getByText(/The project files suggest it \(check\): Map \/Game\/Maps\/Hall/)).toBeTruthy();
+      expect(within(profile).getAllByRole('checkbox', { name: /^(?!Use this profile)/ }).length).toBe(17 + 8);
+      await user.click(within(systems).getByRole('checkbox', { name: 'Multiplayer and networking' }));
+      expect(engines.profile.confirmed).toEqual(['multiplayer']);
+      expect(await within(profile).findByText('Multiplayer and networking is in scope')).toBeTruthy();
+    });
+
+    it('turns a risk flag into an entry in the risks register only when you press the button', async () => {
+      const user = await openIntegrations({}, { profile: { enabled: true, confirmed: ['multiplayer'], checked: [] } });
+      const profile = await screen.findByRole('region', { name: 'Backrooms game profile' });
+      const flags = await within(profile).findByRole('list', { name: 'Risk flags' });
+      expect(fake.calls.some((c) => c.channel === 'risks:create')).toBe(false);
+      await user.click(within(flags).getByRole('button', { name: /^Add "Multiplayer and networking is in scope" to the risks register/ }));
+      expect(fake.calls.find((c) => c.channel === 'risks:create')?.input).toMatchObject({ projectId: 'project-1', kind: 'risk', title: 'Backrooms: Multiplayer and networking is in scope', severity: 'high' });
+      expect(await within(profile).findByText(/to the risks register\./)).toBeTruthy();
+    });
   });
 });

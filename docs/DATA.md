@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 8)
+## Schema (version 13)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -49,7 +49,11 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `worktrees` | 11 | project (cascade), name, folder, branch, time created, time removed | The linked working trees this app created, so it removes only its own. Not exported. |
 | `run_sessions` | 12 | run (cascade), project (cascade), provider, model, working folder, times, outcome, exit code, the provider's session id, denied requests, tools used, error, answer (redacted, last 40 KB), whether it streamed | The record of an agent run that really started, kept after the run. Deleted after `retention.sessionDays`. Not exported. |
 
-History is trimmed by the retention limits (Settings keys `retention.*`; see ARCHITECTURE.md section 30): `activity_events`, finished `process_runs`, `run_sessions` and `usage_log` rows older than their limit, and rotated log files beyond the count.
+| `command_runs` | 13 | project (cascade), label, start and end time, status, exit code, the redacted output (last 200,000 characters), whether it was cut | The log of every approved command the app ran (a script or an engine build). Deleted with the program records after `retention.processRunDays`. Not exported. |
+| `engine_paths` | 13 | folder, time added | Engine folders you added by hand. Only main inserts here, from a native folder window. Not exported: a folder only means something on this PC. |
+| `project_profiles` | 13 | project (cascade), profile (`backrooms`), on or off, the systems you confirmed (JSON), the checklist state (JSON), time | The optional game profile. Holds only what you set. Not exported. |
+
+History is trimmed by the retention limits (Settings keys `retention.*`; see ARCHITECTURE.md section 30): `activity_events`, finished `process_runs`, `command_runs`, `run_sessions` and `usage_log` rows older than their limit, and rotated log files beyond the count.
 
 Later steps add their tables in new migrations (ARCHITECTURE.md section 8, "Tables later steps add") and register them for export (below).
 

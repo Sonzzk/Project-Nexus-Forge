@@ -98,6 +98,8 @@ export function PermissionsPanel() {
           {(view?.commands ?? []).map((command) => (
             <li key={command.label}>
               <strong className="mono">{command.label}</strong>
+              {command.source === 'engine' && <span className="badge"> engine command</span>}
+              {command.writes && <span className="badge" data-severity="warning"> writes files in the project</span>}
               {command.risks.length > 0 && <span className="badge" data-severity="warning"> looks destructive</span>}
               <div className="muted mono">{command.body === '' ? '(empty script)' : command.body}</div>
               {command.risks.length > 0 && <div role="note">{command.risks.join('; ')}.</div>}

@@ -23,6 +23,7 @@ import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { createChangeService, createOverviewService } from './changes';
 import { createDiagnosticsService } from './diagnostics';
+import { createEngineService, createProfileService, describeUnrealProject, unrealContextText } from './engines';
 import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
@@ -228,6 +229,11 @@ async function startServices(): Promise<void> {
   const memory = createMemoryService({ db, projects, activity, confirm: (options) => ui.confirm(options) });
   const tasks = createTaskService({ db, projects, activity, requirePlanApproval: () => settingsStore.get('tasks.requirePlanApproval') });
   const packs = createPackService({
+    engineContext: (projectId) => {
+      const found = projects.get(projectId);
+      const described = found === undefined ? undefined : describeUnrealProject(found.rootPath);
+      return described === undefined ? '' : unrealContextText(described);
+    },
     db,
     projects,
     memory,
@@ -331,7 +337,26 @@ async function startServices(): Promise<void> {
     },
     sessions: changes,
   });
+  const engines = createEngineService({
+    db,
+    projects,
+    runner,
+    activity,
+    permissions,
+    confirm: (options) => ui.confirm(options),
+    logger: logger.child('engines'),
+    openPath: (fullPath) => shell.openPath(fullPath),
+    pickFolder: async (title) => {
+      const box = { title, properties: ['openDirectory' as const] };
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const result = window === undefined ? await dialog.showOpenDialog(box) : await dialog.showOpenDialog(window, box);
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    env: () => process.env,
+  });
+  const profiles = createProfileService({ db, projects, activity });
   const commands = createCommandService({
+    extra: (projectId) => engines.commandsFor(projectId),
     db,
     projects,
     permissions,
@@ -452,6 +477,8 @@ async function startServices(): Promise<void> {
     attention,
     diagnostics,
     retention,
+    engines,
+    profiles,
     resourcesLatest: latestReport,
     resources: () => report(),
     git,

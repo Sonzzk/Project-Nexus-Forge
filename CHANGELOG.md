@@ -7,6 +7,20 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 18 · Unreal Engine 5 integration (2026-11-02, tag `step-18`)
+
+### Added
+- Unreal Engine on the Integrations page: the engines installed on this PC (from the Epic launcher's list, registered source builds, folders you add and the default folder; an incomplete install is marked), and for an Unreal project its `.uproject`, engine match, targets, modules, plugins, default map and content counts, all read from files (binary assets are counted, never opened).
+- Open the project (through Windows, after a confirmation) and its Source, Config, Content, Plugins and Saved/Logs folders, and the matching engine folder.
+- Build commands for the project's Game and Editor targets, offered only when the project has C++ source and a complete matching engine. They are approved commands: you approve each in a window, they are marked "engine command" and "writes files in the project", agents cannot run them, and the output of every approved command run is now kept and can be read on the Integrations page.
+- A capability report that says what is implemented, unavailable, awaiting configuration, or off (running automation tests is unavailable and editor automation is off and not built).
+- Unreal context in context packs, eight Unreal task templates, an Engine dashboard card.
+- The optional Backrooms game profile: off by default; seventeen systems you confirm one by one (project names only hint), the horror-quality checklist, scope tiers, and risk flags you can add to the risks register; confirmed systems become subsystem suggestions in the task form.
+- Schema v13 (`command_runs`, `engine_paths`, `project_profiles`), eight channels. Decision D-043, known issue KI-022.
+
+### Changed
+- A program started through a `.bat` or `.cmd` file may now have an argument with spaces in it (for example `C:\Program Files\...`); the argument is quoted. Other special characters are still refused (amends D-025).
+
 ## Step 17 · Activity logs and monitoring (2026-11-02, tag `step-17`)
 
 ### Added

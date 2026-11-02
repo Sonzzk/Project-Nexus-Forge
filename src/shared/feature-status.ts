@@ -56,7 +56,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('git', 'Git and Changes', 'available', 7, 'Status, branches and recent commits, agent changes with diffs to commit, reject or revert, checkpoints and working trees.'),
   nav('testing', 'Testing', 'upcoming', 23),
   nav('assets', 'Assets', 'upcoming', 22),
-  nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits.'),
+  nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits; Unreal Engine installs and projects, and the optional Backrooms profile.'),
   nav(
     'activity',
     'Activity and Logs',
@@ -170,6 +170,15 @@ export const FEATURES: readonly FeatureStatus[] = [
     state: 'available',
     step: 14,
     note: 'What was sent today and against which launch limits; usage numbers only where a provider returned them.',
+  },
+  {
+    id: 'card.engine',
+    kind: 'card',
+    label: 'Engine',
+    section: 'integrations',
+    state: 'available',
+    step: 18,
+    note: 'The Unreal Engine the selected project would use and whether it can be built; read from files only.',
   },
   {
     id: 'card.attention',

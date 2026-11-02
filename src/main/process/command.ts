@@ -9,6 +9,8 @@ const SHIM = /\.(cmd|bat)$/i;
 /** Drive-letter paths without anything cmd.exe would interpret. Spaces are fine: the path is quoted. */
 const SAFE_SHIM_PATH = /^[A-Za-z]:\\[^"%^&|<>!\r\n\0]*$/;
 const SAFE_SHIM_ARG = /^[A-Za-z0-9_\-./:=@+,\\]+$/;
+/** The same characters with single spaces inside (a path such as D:\My Games\X.uproject). Such an argument is quoted whole, which cmd.exe passes on as one argument. */
+const SAFE_SPACED_SHIM_ARG = /^[A-Za-z0-9_\-./:=@+,\\]+(?: [A-Za-z0-9_\-./:=@+,\\]+)+$/;
 
 export interface PreparedCommand {
   file: string;
@@ -34,7 +36,7 @@ export function prepareCommand(
       },
     );
   for (const arg of args)
-    if (!SAFE_SHIM_ARG.test(arg))
+    if (!SAFE_SHIM_ARG.test(arg) && !SAFE_SPACED_SHIM_ARG.test(arg))
       throw new AppError(
         'INVALID_INPUT',
         'An argument for a .cmd program contains characters that cmd.exe would interpret, so the program was not started.',
@@ -46,7 +48,7 @@ export function prepareCommand(
 
   return {
     file: environment.comspec,
-    args: ['/d', '/s', '/c', `""${executable}"${args.length > 0 ? ` ${args.join(' ')}` : ''}"`],
+    args: ['/d', '/s', '/c', `""${executable}"${args.length > 0 ? ` ${args.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ')}` : ''}"`],
     verbatim: true,
   };
 }

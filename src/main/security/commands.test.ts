@@ -11,6 +11,8 @@ import { locateProgram } from '../providers';
 import { createProjectRegistry } from '../projects';
 import { classifyCommand, createCommandService } from './commands';
 import { createPermissionService } from './permissions';
+import type { ExtraCommand } from './commands';
+import { copyFixture } from '../../../test/helpers/tree';
 
 afterEach(removeTempDirs);
 
@@ -93,6 +95,8 @@ describe('classifyCommand', () => {
   });
 });
 
+const extraHolder: { commands: ExtraCommand[] } = { commands: [] };
+
 async function env(scripts: Record<string, string> | null = { hello: "node -e \"console.log('hello from the script')\"", clean: 'rm -rf dist' }) {
   const { db } = await openMigratedDb();
   const logger = memoryLogger();
@@ -112,7 +116,7 @@ async function env(scripts: Record<string, string> | null = { hello: "node -e \"
   };
   const permissions = createPermissionService({ db, projects, activity, confirm });
   const runner = createProcessRunner({ logger, redactor });
-  const commands = createCommandService({ db, projects, permissions, activity, runner, redactor, confirm, locate: (name) => locateProgram([`${name}.cmd`, `${name}.exe`]), timeoutMs: () => 60_000 });
+  const commands = createCommandService({ db, projects, permissions, activity, runner, redactor, confirm, locate: (name) => locateProgram([`${name}.cmd`, `${name}.exe`]), timeoutMs: () => 60_000, extra: () => extraHolder.commands });
   const rewrite = (next: Record<string, string>): void => writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'throwaway', scripts: next }));
   return { db, dir, project, commands, permissions, asked, answer, activity, rewrite };
 }
@@ -152,6 +156,63 @@ describe('discovering project commands', () => {
     const secret = await env({ deploy: 'node push.js --token sk-ant-api03-notreal0123456789' });
     const body = secret.commands.discover(secret.project.id).commands[0]?.body ?? '';
     expect(body).not.toContain('sk-ant-api03-notreal');
+  });
+});
+
+describe('commands from an engine integration', () => {
+  const build = (): ExtraCommand => {
+    const engine = copyFixture('engines/UE_5.5');
+    return {
+      label: 'Unreal: build Backrooms (Win64, Development)',
+      argv: [join(engine, 'Engine', 'Build', 'BatchFiles', 'Build.bat'), 'Backrooms', 'Win64', 'Development', '-Project=D:\\My Games\\Backrooms.uproject', '-WaitMutex'],
+      body: 'Builds the C++ target Backrooms. It writes files in Binaries and Intermediate.',
+      timeoutMs: 60_000,
+      writes: true,
+    };
+  };
+
+  it('are listed with the project scripts, marked as engine commands that write files', async () => {
+    const e = await env();
+    extraHolder.commands = [build()];
+    const { commands } = e.commands.discover(e.project.id);
+    expect(commands.map((c) => [c.label, c.source, c.writes])).toEqual(expect.arrayContaining([['Unreal: build Backrooms (Win64, Development)', 'engine', true], ['npm run hello', 'script', false]]));
+    extraHolder.commands = [];
+  });
+
+  it('are approved in a window that says what they do, then run by the app through the process runner with a path that has spaces, and the output is saved as a log', async () => {
+    const e = await env(null);
+    extraHolder.commands = [build()];
+    const approval = await e.commands.approve(e.project.id, 'Unreal: build Backrooms (Win64, Development)');
+    expect(e.asked[0]?.detail).toContain('It writes files in Binaries and Intermediate.');
+    expect(e.asked[0]?.detail).toContain("engine's own tool");
+    const result = await e.commands.run(approval?.id ?? '');
+    expect(result).toMatchObject({ ran: true, status: 'exited', exitCode: 0 });
+    expect(result.output).toContain('FIXTURE-BUILD Backrooms Win64 Development');
+    expect(result.output).toContain('-Project=D:\\My Games\\Backrooms.uproject'); // one argument, spaces intact
+    expect(result.logId).not.toBeNull();
+    const [entry] = e.commands.history(e.project.id);
+    expect(entry).toMatchObject({ id: result.logId, label: 'Unreal: build Backrooms (Win64, Development)', status: 'exited', exitCode: 0 });
+    expect(e.commands.log(result.logId ?? '')).toMatchObject({ output: expect.stringContaining('FIXTURE-BUILD') as unknown, truncated: false });
+    extraHolder.commands = [];
+  });
+
+  it('stop running when the engine command changes after approval (a different engine or arguments), and are refused when the program is gone', async () => {
+    const e = await env(null);
+    extraHolder.commands = [build()];
+    const approval = await e.commands.approve(e.project.id, 'Unreal: build Backrooms (Win64, Development)');
+    extraHolder.commands = [{ ...build(), argv: [...build().argv, '-Clean'] }];
+    expect(await failure(e.commands.run(approval?.id ?? ''))).toMatchObject({ code: 'PERMISSION_REQUIRED', message: expect.stringContaining('changed since you approved it') as unknown });
+    const gone = { ...build(), argv: ['C:\\no\\such\\Build.bat', 'X'] };
+    extraHolder.commands = [gone];
+    const again = await e.commands.approve(e.project.id, gone.label);
+    expect(await failure(e.commands.run(again?.id ?? ''))).toMatchObject({ code: 'TOOL_NOT_INSTALLED' });
+    extraHolder.commands = [];
+  });
+
+  it('keep history per project and refuse an unknown log', async () => {
+    const e = await env(null);
+    expect(e.commands.history(e.project.id)).toEqual([]);
+    expect(() => e.commands.log('nope')).toThrow();
   });
 });
 

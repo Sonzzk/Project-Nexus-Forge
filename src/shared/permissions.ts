@@ -59,6 +59,10 @@ export const ProjectCommandSchema = z.object({
   body: z.string().max(500),
   /** Why it looks destructive; empty when nothing matched. */
   risks: z.array(z.string().max(200)).max(10),
+  /** Where the command comes from: a script of the project, or an engine integration (for example a build). */
+  source: z.enum(['script', 'engine']),
+  /** Running it writes files in the project (a build writes Binaries and Intermediate). Said in the approval window. */
+  writes: z.boolean(),
   approval: z
     .object({
       id: z.string().max(64),
@@ -88,5 +92,7 @@ export const CommandResultSchema = z.object({
   /** The end of the output with secrets removed. */
   output: z.string().max(20_000),
   truncated: z.boolean(),
+  /** The saved log of this run (see `commands:history`), if it ran. */
+  logId: z.string().max(64).nullable(),
 });
 export type CommandResult = z.output<typeof CommandResultSchema>;

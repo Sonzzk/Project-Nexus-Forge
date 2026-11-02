@@ -72,7 +72,7 @@ export function attachPlanning(fake: FakeApi, seed: Partial<FakePlanning> = {}):
     writesEnabled: false,
     permissions: { grants: [], approvals: [], commands: [], commandsNote: '' },
     windowAnswer: true,
-    commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'ok', truncated: false },
+    commandOutput: { ran: true, status: 'exited', exitCode: 0, output: 'ok', truncated: false, logId: null },
     ...seed,
   };
   let counter = 100;

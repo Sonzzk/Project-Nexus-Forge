@@ -108,3 +108,15 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **Test output** is not recorded until Step 23.
 - **The attention list and the dashboard refresh on activity events**, not on a timer, so a resource warning is as old as the last check.
 - **Retention is by age only**, not by size; a very busy day can still add a lot of rows before the next daily prune. The log files keep their own 5 MB rotation.
+
+## KI-022 · Unreal integration limits (found in Step 18, accepted)
+
+- **No build was run against a real project.** The build command was run only against a fixture `Build.bat` that echoes its arguments (unit and end-to-end tests). A real build of the projects on this PC was not run: it can take many minutes, writes `Binaries` and `Intermediate` in a real project, and the rules forbid changing real projects from tests. The first real build is yours to approve; if the engine rejects the command line, the log shows why.
+- **Only Win64, Development builds** of Game and Editor targets are offered. Other configurations, platforms, packaging and cooking are not (Step 22/27 may add packaging). The two Visual Studio flags `-FromMsBuild` and `-architecture=x64` are not passed (D-043).
+- **No automation tests and no editor automation.** Running automation tests from here is unavailable until the quoting is verified (Step 23); editor Python is off and not built. The capability report says both.
+- **Engine discovery depends on four sources**, one of them an undocumented launcher file. An install in a folder that none of them lists, and that was not added by hand, is not found. On this PC only UE_5.8 is listed; `Seven_Shifts_Models` asks for 5.6 and the app reports that no matching engine was found instead of picking another version. Source builds registered in the registry could not be tested live (the key is empty here).
+- **A build uses Build.bat under whichever dotnet the engine ships.** If the engine's own prerequisites (Visual Studio, the Windows SDK, the .NET runtime Unreal needs) are missing, the build fails with the engine's message, which the log keeps. The app does not check prerequisites.
+- **Opening the project is a hand-off.** Windows decides which program opens the `.uproject`; the editor may compile or upgrade the project, which changes files, and the app cannot stop it.
+- **The project description is a count, not an asset index.** Binary assets are counted and named by folder, never opened; plugin dependencies, redirectors and asset references are not analyzed. A very large `Content` folder stops counting at 20,000 entries and says so.
+- **The Backrooms profile stores only your confirmations.** Hints are word matches on target, module, plugin, folder and map names and can be wrong or missing; they never confirm anything. It does not read a design document.
+- **Command logs are kept for the retention period of program records** (60 days by default) and the output is cut to the last 200,000 characters.

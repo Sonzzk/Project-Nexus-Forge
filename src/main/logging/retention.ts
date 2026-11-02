@@ -58,6 +58,7 @@ export function createRetention(options: RetentionOptions): Retention {
     if (s.activityDays > 0) result.activity = db.run('DELETE FROM activity_events WHERE occurred_at < ?', cutoff(s.activityDays)).changes;
     if (s.processRunDays > 0) result.processRuns = db.run("DELETE FROM process_runs WHERE status != 'running' AND COALESCE(ended_at, started_at) < ?", cutoff(s.processRunDays)).changes;
     if (s.sessionDays > 0) result.sessions = db.run("DELETE FROM run_sessions WHERE outcome != 'running' AND COALESCE(ended_at, started_at) < ?", cutoff(s.sessionDays)).changes;
+    if (s.processRunDays > 0) result.processRuns += db.run('DELETE FROM command_runs WHERE COALESCE(ended_at, started_at) < ?', cutoff(s.processRunDays)).changes;
     if (s.usageDays > 0) result.usage = db.run("DELETE FROM usage_log WHERE status != 'running' AND started_at < ?", cutoff(s.usageDays)).changes;
     if (existsSync(options.logDir)) {
       for (const name of readdirSync(options.logDir)) {

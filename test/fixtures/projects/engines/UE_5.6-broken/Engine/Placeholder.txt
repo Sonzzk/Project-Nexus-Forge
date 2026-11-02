@@ -1,0 +1,1 @@
+fixture: an install with nothing in it, like a half-finished launcher download

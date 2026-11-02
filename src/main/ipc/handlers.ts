@@ -15,6 +15,7 @@ import type { CommandService, PermissionService, WriteGate } from '../security';
 import type { ChangeService, OverviewService } from '../changes';
 import type { DiagnosticsService } from '../diagnostics';
 import type { SessionService } from '../sessions';
+import type { EngineService, ProfileService } from '../engines';
 import type { AttentionItem } from '@shared/sessions';
 import type { Retention } from '../logging';
 import { resolveInside } from '../security';
@@ -47,6 +48,8 @@ export interface HandlerServices {
   attention: { items(): AttentionItem[] };
   diagnostics: DiagnosticsService;
   retention: Retention;
+  engines: EngineService;
+  profiles: ProfileService;
   /** The last resource check, without measuring again. */
   resourcesLatest: () => ResourceReport | null;
   /** A fresh resource snapshot with the local-inference verdict. */
@@ -184,12 +187,19 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('queue:releaseLock', ({ projectId }) => services.queue.releaseLock(projectId));
   ipc.handle('resources:check', () => services.resources());
   ipc.handle('usage:summary', ({ projectId }) => services.usage.summary(projectId));
-  ipc.handle('permissions:view', ({ projectId }) => ({
-    grants: services.permissions.grants(projectId),
-    approvals: services.permissions.approvals(projectId),
-    ...services.commands.discover(projectId),
-    commandsNote: services.commands.discover(projectId).note,
-  }));
+  ipc.handle('profiles:get', ({ projectId }) => services.profiles.get(projectId));
+  ipc.handle('profiles:set', (patch) => services.profiles.set(patch));
+  ipc.handle('engines:view', ({ projectId }) => services.engines.view(projectId));
+  ipc.handle('engines:open', ({ projectId, target }) => services.engines.open(projectId, target));
+  ipc.handle('engines:addPath', () => services.engines.addEnginePath());
+  ipc.handle('engines:removePath', ({ index }) => services.engines.removeEnginePath(index));
+  ipc.handle('commands:history', ({ projectId }) => services.commands.history(projectId));
+  ipc.handle('commands:log', ({ id }) => services.commands.log(id));
+  ipc.handle('permissions:view', async ({ projectId }) => {
+    await services.engines.ensure(); // engine commands depend on the installed engines
+    const discovered = services.commands.discover(projectId);
+    return { grants: services.permissions.grants(projectId), approvals: services.permissions.approvals(projectId), commands: discovered.commands, commandsNote: discovered.note };
+  });
   ipc.handle('permissions:request', async ({ projectId, taskId, scope }) => ({ permission: await services.permissions.request({ projectId, taskId, scope }) }));
   ipc.handle('permissions:revoke', ({ id }) => services.permissions.revoke(id));
   ipc.handle('commands:approve', async ({ projectId, label }) => ({ approved: (await services.commands.approve(projectId, label)) !== null }));

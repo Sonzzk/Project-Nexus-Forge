@@ -40,6 +40,8 @@ export interface PackServiceOptions {
   limits: () => { maxFiles: number; budgetMs: number };
   /** The open tasks of the project that mention any of the words, as Markdown (empty when none). The planning module provides it. */
   relatedTasks?: (projectId: string, words: readonly string[]) => string;
+  /** A summary of the engine project (Unreal), as Markdown, or empty for a project that has none. */
+  engineContext?: (projectId: string) => string;
   now?: () => Date;
   newId?: () => string;
 }
@@ -125,6 +127,11 @@ export function createPackService(options: PackServiceOptions): PackService {
     const related = options.relatedTasks?.(request.projectId, keywordsOf(request.task)) ?? '';
     if (related.trim() !== '')
       add({ path: 'tasks', kind: 'tasks', reason: 'Open tasks that mention the same things', bytes: Buffer.byteLength(related, 'utf8'), mtimeMs: 0, sha256: sha256(related) }, `## Related tasks\n\n${related.trim()}\n`);
+
+    // 2b. The engine project's own summary (for Unreal: targets, modules, plugins, maps; assets named only).
+    const engine = options.engineContext?.(request.projectId) ?? '';
+    if (engine.trim() !== '')
+      add({ path: 'engine', kind: 'engine', reason: 'A summary of the engine project, read from its project files', bytes: Buffer.byteLength(engine, 'utf8'), mtimeMs: 0, sha256: sha256(engine) }, engine);
 
     // 3. Files the user picked by hand come next; the same rules apply to them.
     const picked = new Set<string>();
@@ -249,6 +256,8 @@ export function createPackService(options: PackServiceOptions): PackService {
       try {
         if (item.kind === 'tasks') {
           if (sha256(options.relatedTasks?.(projectId, keywordsOf(task)) ?? '') !== item.sha256) stale.push({ path: item.path, change: 'changed' });
+        } else if (item.kind === 'engine') {
+          if (sha256(options.engineContext?.(projectId) ?? '') !== item.sha256) stale.push({ path: item.path, change: 'changed' });
         } else if (item.kind === 'instructions') {
           if (sha256(p.instructions) !== item.sha256) stale.push({ path: item.path, change: 'changed' });
         } else if (item.path.startsWith('app:')) {

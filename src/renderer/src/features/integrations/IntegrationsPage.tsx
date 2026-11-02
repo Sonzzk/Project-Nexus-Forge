@@ -3,6 +3,7 @@ import type { SerializedError } from '@shared/errors';
 import { STATUS_TEXT, type OllamaModel, type ProviderStatus, type PullProgress } from '@shared/providers';
 import { formatTime } from '../../lib/activity';
 import { useSettings } from '../../lib/settings';
+import { EnginesPanel } from '../engines/EnginesPanel';
 import { UsagePanel } from './UsagePanel';
 
 const CAPABILITY_LABELS: Record<keyof ProviderStatus['capabilities'], string> = {
@@ -271,6 +272,7 @@ export function IntegrationsPage() {
           </section>
         ))}
         <UsagePanel />
+        <EnginesPanel />
       </div>
     </div>
   );

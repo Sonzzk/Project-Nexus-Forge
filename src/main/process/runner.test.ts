@@ -314,7 +314,7 @@ describe('.cmd programs on Windows', () => {
     },
   );
 
-  it.each([['a&calc'], ['a b'], ['x|y'], ['%PATH%'], ['"q"'], ['^'], ['a>b'], ['']])(
+  it.each([['a&calc'], [' a'], ['a '], ['a  b'], ['a b&c'], ['x|y'], ['%PATH%'], ['"q"'], ['^'], ['a>b'], ['']])(
     'refuses the argument %j for a .cmd program',
     (arg) => {
       expect(() =>
@@ -325,6 +325,20 @@ describe('.cmd programs on Windows', () => {
       ).toThrow('cmd.exe would interpret');
     },
   );
+
+  it('passes an argument with spaces as one quoted argument (a project path such as D:\\My Games\\X.uproject)', () => {
+    const env = { platform: 'win32' as const, comspec: 'C:\\Windows\\System32\\cmd.exe' };
+    expect(prepareCommand({ executable: 'C:\\UE 5\\Build.bat', args: ['MyEditor', 'Win64', '-Project=D:\\My Games\\X.uproject', '-WaitMutex'] }, env).args).toEqual(['/d', '/s', '/c', '""C:\\UE 5\\Build.bat" MyEditor Win64 "-Project=D:\\My Games\\X.uproject" -WaitMutex"']);
+  });
+
+  it.skipIf(process.platform !== 'win32')('really delivers it as one argument to the program', async () => {
+    const dir = makeTempDir();
+    const executable = join(dir, 'count args.cmd');
+    writeFileSync(executable, '@echo off\r\nset n=0\r\nfor %%a in (%*) do set /a n+=1\r\necho count=%n% first=%~1 second=%~2\r\n');
+    const { runner } = makeRunner();
+    const result = await runner.start(spec('', { executable, args: ['one', '-Project=D:\\My Games\\X.uproject'], cwd: dir })).result;
+    expect(result.stdoutTail.trim()).toBe('count=2 first=one second=-Project=D:\\My Games\\X.uproject');
+  });
 
   it('refuses a .cmd path with characters cmd.exe interprets', () => {
     expect(() =>

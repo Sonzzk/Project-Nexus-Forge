@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   COMPLEXITIES,
   COMPLEXITY_LABELS,
@@ -19,6 +19,7 @@ import {
 } from '@shared/tasks';
 import type { ProviderChoice } from '@shared/providers';
 import type { PlanningApi } from '../../lib/planning';
+import { useProjects } from '../../lib/projects';
 import { ProviderPicker } from '../integrations/ProviderPicker';
 
 const lines = (text: string): string[] => text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -71,6 +72,20 @@ export const fieldsOf = (draft: TaskDraft) => ({
 /** The editable fields of a task (spec §10). `prefix` keeps the labels of two forms apart. */
 export function TaskFieldsForm({ draft, onChange, milestones, withResult }: { draft: TaskDraft; onChange: (draft: TaskDraft) => void; milestones: Milestone[]; withResult: boolean }) {
   const set = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]): void => onChange({ ...draft, [key]: value });
+  const { selected } = useProjects();
+  const [confirmedSystems, setConfirmedSystems] = useState<string[]>([]);
+  const projectId = selected?.id;
+  // Systems the person confirmed in the Backrooms profile become suggestions here; with the profile off there are none.
+  useEffect(() => {
+    if (projectId === undefined) return;
+    let cancelled = false;
+    void window.api.invoke('profiles:get', { projectId }).then((result) => {
+      if (!cancelled) setConfirmedSystems(result.ok && result.value.enabled ? result.value.domains.filter((d) => d.confirmed).map((d) => d.label) : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
   return (
     <div className="form">
       <label>
@@ -103,7 +118,12 @@ export function TaskFieldsForm({ draft, onChange, milestones, withResult }: { dr
       </div>
       <label>
         Subsystem <span className="muted">(for example Movement, Lighting, AI)</span>
-        <input value={draft.subsystem} maxLength={80} onChange={(event) => set('subsystem', event.target.value)} />
+        <input value={draft.subsystem} maxLength={80} list="task-subsystems" onChange={(event) => set('subsystem', event.target.value)} />
+        <datalist id="task-subsystems">
+          {confirmedSystems.map((label) => (
+            <option key={label} value={label} />
+          ))}
+        </datalist>
       </label>
       <label>
         Acceptance criteria <span className="muted">(one per line)</span>
@@ -150,6 +170,8 @@ export function TaskFieldsForm({ draft, onChange, milestones, withResult }: { dr
 export function NewTaskForm({ projectId, planning, onCreated, onClose }: { projectId: string; planning: PlanningApi; onCreated: (task: Task) => void; onClose: () => void }) {
   const [draft, setDraft] = useState<TaskDraft>(emptyDraft());
   const [template, setTemplate] = useState<TemplateId | ''>('');
+  const { projects } = useProjects();
+  const project = projects.find((p) => p.id === projectId); // engine templates are offered only for projects of that engine
 
   const applyTemplate = (id: TemplateId | ''): void => {
     setTemplate(id);
@@ -167,7 +189,7 @@ export function NewTaskForm({ projectId, planning, onCreated, onClose }: { proje
         <label htmlFor="task-template">Start from a template</label>
         <select id="task-template" value={template} onChange={(event) => applyTemplate(TASK_TEMPLATES.find((t) => t.id === event.target.value)?.id ?? '')}>
           <option value="">None</option>
-          {TASK_TEMPLATES.map((t) => (
+          {TASK_TEMPLATES.filter((t) => t.engine === undefined || project?.type === 'unreal').map((t) => (
             <option key={t.id} value={t.id}>
               {t.label}
             </option>

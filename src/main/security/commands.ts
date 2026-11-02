@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { basename, isAbsolute } from 'node:path';
 import { AppError } from '@shared/errors';
 import type { CommandResult, ProjectCommand } from '@shared/permissions';
 import type { ActivityLog, Redactor } from '../logging';
@@ -95,6 +95,18 @@ export function classifyCommand(command: readonly string[] | string): string[] {
 
 // ------------------------------------------------------------------------------------------------------------ service
 
+/** A command an engine integration discovered. It is approved and run exactly like a script, and bound to its argument array. */
+export interface ExtraCommand {
+  label: string;
+  /** The program (an absolute path) and its arguments. */
+  argv: string[];
+  /** What it does, in plain words, shown in the approval window. */
+  body: string;
+  timeoutMs?: number;
+  /** It writes files in the project. */
+  writes: boolean;
+}
+
 export interface CommandServiceOptions {
   db: Db;
   projects: ProjectRegistry;
@@ -105,6 +117,8 @@ export interface CommandServiceOptions {
   confirm: Confirm;
   /** Finds `npm` and other programs by name; undefined when not installed. */
   locate: (name: string) => string | undefined;
+  /** Commands that engine integrations found for a project (a build, say). Their program is an absolute path. */
+  extra?: (projectId: string) => ExtraCommand[];
   timeoutMs: () => number;
   now?: () => Date;
   newId?: () => string;
@@ -118,6 +132,10 @@ export interface CommandService {
   revoke(id: string): void;
   /** Runs an approved command whose script is unchanged. A destructive one asks again each time. */
   run(id: string): Promise<CommandResult>;
+  /** The saved logs of earlier runs in a project, newest first (without their text). */
+  history(projectId: string, limit?: number): { id: string; label: string; startedAt: string; endedAt: string | null; status: string; exitCode: number | null }[];
+  /** The saved, redacted output of one run. */
+  log(id: string): { id: string; label: string; startedAt: string; status: string; exitCode: number | null; output: string; truncated: boolean };
 }
 
 interface ScriptInfo {
@@ -126,6 +144,9 @@ interface ScriptInfo {
   body: string;
   hash: string;
   risks: string[];
+  source: 'script' | 'engine';
+  writes: boolean;
+  timeoutMs?: number;
 }
 interface ApprovedRow {
   id: string;
@@ -140,6 +161,8 @@ interface ApprovedRow {
 
 const MAX_PACKAGE_JSON = 1024 * 1024;
 const OUTPUT_TAIL = 20_000;
+/** The longest output kept in a saved log (a build can print a lot; the end is what matters). */
+const MAX_LOG = 200_000;
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 export function createCommandService(options: CommandServiceOptions): CommandService {
@@ -183,9 +206,18 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
       .map((name): ScriptInfo => {
         const parts = [text(`pre${name}`), text(name), text(`post${name}`)].filter((p): p is string => p !== undefined);
         const body = parts.join('\n');
-        return { label: `npm run ${name}`, argv: ['npm', 'run', name], body: redactor.redact(body).slice(0, 500), hash: sha(JSON.stringify(parts)), risks: classifyCommand(body) };
+        return { label: `npm run ${name}`, argv: ['npm', 'run', name], body: redactor.redact(body).slice(0, 500), hash: sha(JSON.stringify(parts)), risks: classifyCommand(body), source: 'script', writes: false };
       });
     return { scripts: found, note: found.length === 0 ? 'package.json has no scripts.' : '' };
+  }
+
+  /** The project's scripts and the commands its engine integration found. */
+  function allCommands(projectId: string, rootPath: string): { scripts: ScriptInfo[]; note: string } {
+    const own = scripts(rootPath);
+    const extra = (options.extra?.(projectId) ?? []).map(
+      (c): ScriptInfo => ({ label: c.label, argv: c.argv, body: redactor.redact(c.body).slice(0, 500), hash: sha(JSON.stringify([c.argv, c.body])), risks: classifyCommand(c.argv), source: 'engine', writes: c.writes, ...(c.timeoutMs === undefined ? {} : { timeoutMs: c.timeoutMs }) }),
+    );
+    return { scripts: [...own.scripts, ...extra], note: extra.length > 0 && own.scripts.length === 0 ? '' : own.note };
   }
 
   const approvedFor = (projectId: string): ApprovedRow[] => db.all<ApprovedRow>('SELECT * FROM approved_commands WHERE project_id = ? AND revoked_at IS NULL', projectId);
@@ -193,7 +225,7 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
   return {
     discover(projectId) {
       const project = projectOf(projectId);
-      const { scripts: found, note } = scripts(project.rootPath);
+      const { scripts: found, note } = allCommands(projectId, project.rootPath);
       const approved = new Map(approvedFor(projectId).map((row) => [row.label, row]));
       return {
         note,
@@ -204,6 +236,8 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
             argv: script.argv,
             body: script.body,
             risks: script.risks,
+            source: script.source,
+            writes: script.writes,
             approval: row === undefined ? null : { id: row.id, approvedAt: row.approved_at, destructive: row.destructive === 1, changed: row.body_hash !== script.hash },
           };
         }),
@@ -212,15 +246,15 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
 
     async approve(projectId, label) {
       const project = projectOf(projectId);
-      const script = scripts(project.rootPath).scripts.find((s) => s.label === label);
+      const script = allCommands(projectId, project.rootPath).scripts.find((s) => s.label === label);
       if (script === undefined) throw new AppError('NOT_FOUND', 'That command is not in this project.', { hint: 'Only commands found in the project can be approved.' });
       const destructive = script.risks.length > 0;
       const ok = await options.confirm({
         title: destructive ? 'Approve a command that looks destructive?' : 'Approve this command?',
         message: `Allow this app to run "${script.label}" in ${project.rootPath}?`,
         detail: [
-          `It runs the project's own script:\n${script.body === '' ? '(empty)' : script.body}`,
-          destructive ? `This looks destructive:\n- ${script.risks.join('\n- ')}\n\nYou will be asked again every time it runs.` : 'That is code from the project running on your PC, as if you typed it in a terminal.',
+          `${script.source === 'engine' ? 'It runs' : "It runs the project's own script"}:\n${script.body === '' ? '(empty)' : script.body}`,
+          destructive ? `This looks destructive:\n- ${script.risks.join('\n- ')}\n\nYou will be asked again every time it runs.` : script.source === 'engine' ? 'It starts the engine\'s own tool on your PC, as if you typed it in a terminal.' : 'That is code from the project running on your PC, as if you typed it in a terminal.',
           'If the script text changes later, it will not run until you approve it again. Agents cannot run it.',
         ].join('\n\n'),
         confirmLabel: destructive ? 'Approve anyway' : 'Approve',
@@ -248,7 +282,7 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
       const row = db.get<ApprovedRow>('SELECT * FROM approved_commands WHERE id = ?', id);
       if (row === undefined || row.revoked_at !== null) throw new AppError('PERMISSION_REQUIRED', 'This command is not approved.', { hint: 'Approve it first.' });
       const project = projectOf(row.project_id);
-      const script = scripts(project.rootPath).scripts.find((s) => s.label === row.label);
+      const script = allCommands(row.project_id, project.rootPath).scripts.find((s) => s.label === row.label);
       if (script === undefined) throw new AppError('NOT_FOUND', `"${row.label}" is no longer in the project.`);
       if (script.hash !== row.body_hash)
         throw new AppError('PERMISSION_REQUIRED', `The script behind "${row.label}" changed since you approved it, so it was not run.`, { hint: 'Read the new script and approve the command again.' });
@@ -260,17 +294,18 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
           detail: `${script.body}\n\nThis looks destructive:\n- ${script.risks.join('\n- ')}\n\nThere is no undo for deleted files unless Git or a backup has them.`,
           confirmLabel: 'Run it',
         });
-        if (!ok) return { ran: false, status: null, exitCode: null, output: '', truncated: false };
+        if (!ok) return { ran: false, status: null, exitCode: null, output: '', truncated: false, logId: null };
         permissions.record({ projectId: row.project_id, scope: 'destructive', what: `Ran destructive command: ${row.label}`, where: project.rootPath, detail: script.risks.join('; ') });
       }
-      const program = options.locate(argv[0] ?? '');
+      const first = argv[0] ?? '';
+      const program = isAbsolute(first) ? (existsSync(first) ? first : undefined) : options.locate(first);
       if (program === undefined) throw new AppError('TOOL_NOT_INSTALLED', `${argv[0] ?? 'The program'} was not found on this PC.`, { hint: 'Install Node.js, then try again.' });
       activity.record({ kind: 'command.run', severity: 'info', summary: `Running "${row.label}" in "${project.name}".`, projectId: row.project_id });
       const result = await runner.start({
         executable: program,
         args: argv.slice(1),
         cwd: project.rootPath,
-        timeoutMs: options.timeoutMs(),
+        timeoutMs: script.timeoutMs ?? options.timeoutMs(),
         maxOutputBytes: 1024 * 1024,
         purpose: `Run ${row.label}`,
         owner: { kind: 'test-run', id: `command-${id}` },
@@ -284,7 +319,22 @@ export function createCommandService(options: CommandServiceOptions): CommandSer
         projectId: row.project_id,
         details: { exitCode: result.exitCode, status: result.status },
       });
-      return { ran: true, status: result.status, exitCode: result.exitCode, output: combined.slice(-OUTPUT_TAIL), truncated: result.truncated || combined.length > OUTPUT_TAIL };
+      const logId = newId();
+      db.run('INSERT INTO command_runs (id, project_id, label, started_at, ended_at, status, exit_code, output, truncated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', logId, row.project_id, row.label, result.startedAt, result.endedAt, result.status, result.exitCode, combined.slice(-MAX_LOG), result.truncated || combined.length > MAX_LOG ? 1 : 0);
+      return { ran: true, status: result.status, exitCode: result.exitCode, output: combined.slice(-OUTPUT_TAIL), truncated: result.truncated || combined.length > OUTPUT_TAIL, logId };
+    },
+
+    history(projectId, limit = 30) {
+      projectOf(projectId);
+      return db
+        .all<{ id: string; label: string; started_at: string; ended_at: string | null; status: string; exit_code: number | null }>('SELECT id, label, started_at, ended_at, status, exit_code FROM command_runs WHERE project_id = ? ORDER BY started_at DESC, id LIMIT ?', projectId, limit)
+        .map((r) => ({ id: r.id, label: r.label, startedAt: r.started_at, endedAt: r.ended_at, status: r.status, exitCode: r.exit_code }));
+    },
+
+    log(id) {
+      const r = db.get<{ id: string; label: string; started_at: string; status: string; exit_code: number | null; output: string; truncated: number }>('SELECT id, label, started_at, status, exit_code, output, truncated FROM command_runs WHERE id = ?', id);
+      if (r === undefined) throw new AppError('NOT_FOUND', 'There is no saved log with that id.', { hint: 'Old logs are removed under the retention limits.' });
+      return { id: r.id, label: r.label, startedAt: r.started_at, status: r.status, exitCode: r.exit_code, output: r.output, truncated: r.truncated === 1 };
     },
   };
 }

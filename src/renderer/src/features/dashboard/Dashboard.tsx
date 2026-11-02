@@ -384,6 +384,36 @@ function ProvidersCard() {
   );
 }
 
+/** The Unreal engine the selected project would use, read from files. Shown only as facts; nothing is started from here. */
+function EngineCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const view = useJson(selected?.id, (id) => window.api.invoke('engines:view', { projectId: id }));
+  const build = view?.capabilities.find((c) => c.id === 'build');
+  return (
+    <section className="card" aria-label="Engine" data-feature="card.engine">
+      <div className="card__head">
+        <h2>Engine</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its engine.</p>}
+      {view !== undefined && !view.isUnreal && <p className="empty">Engine details are shown for Unreal projects. {selected?.name} is not one.</p>}
+      {view?.project !== undefined && view.project !== null && (
+        <dl className="facts">
+          <dt>Unreal project</dt>
+          <dd>{view.project.name}</dd>
+          <dt>Engine</dt>
+          <dd>{view.resolved === null ? view.resolveNote : view.resolved.id}</dd>
+          <dt>Building</dt>
+          <dd>{build === undefined ? 'Unknown' : `${build.state === 'implemented' ? 'Ready' : 'Not ready'}: ${build.reason}`}</dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function NextActionCard() {
   const { selected } = useProjects();
   const { go } = useNav();
@@ -485,6 +515,7 @@ export function Dashboard() {
         <AttentionCard />
         <ResourcesCard />
         <UsageCard />
+        <EngineCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

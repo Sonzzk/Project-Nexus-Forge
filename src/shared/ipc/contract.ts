@@ -15,6 +15,8 @@ import {
 } from '../context';
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
 import { AttentionItemSchema, SessionSchema, SessionSummarySchema } from '../sessions';
+import { ProfilePatchSchema, ProfileViewSchema } from '../backrooms';
+import { OPEN_TARGETS, UnrealViewSchema } from '../unreal';
 import { ActivityExportRequestSchema, ActivityQuerySchema, FileExportResultSchema, LogsRequestSchema, LogsResultSchema } from '../diagnostics';
 import { ChangeSessionSchema, GitOverviewSchema, ReviewSchema } from '../changes';
 import { CommandResultSchema, PERMISSION_SCOPES, PermissionSchema, PermissionsViewSchema } from '../permissions';
@@ -237,6 +239,23 @@ export const contract = {
   'changes:revert': { request: z.strictObject({ projectId: z.string().max(64), commit: z.string().regex(/^[0-9a-f]{40}$/) }), response: z.strictObject({ reverted: z.boolean(), commit: z.string().optional() }) },
   'worktrees:add': { request: z.strictObject({ projectId: z.string().max(64), name: z.string().min(1).max(60) }), response: z.strictObject({ created: z.boolean() }) },
   'worktrees:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.boolean() }) },
+  // Engine integrations (Step 18). The page names a project and a kind of folder; main finds the files, asks in a window before the
+  // project is opened, and picks engine folders in a native window.
+  // The optional Backrooms game profile (spec §19): what you confirmed, never what the files merely suggest.
+  'profiles:get': { request: z.strictObject({ projectId: z.string().max(64) }), response: ProfileViewSchema },
+  'profiles:set': { request: ProfilePatchSchema, response: ProfileViewSchema },
+  'engines:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: UnrealViewSchema },
+  'engines:open': { request: z.strictObject({ projectId: z.string().max(64), target: z.enum(OPEN_TARGETS) }), response: z.strictObject({ opened: z.boolean() }) },
+  'engines:addPath': { request: noInput, response: z.strictObject({ added: z.boolean() }) },
+  'engines:removePath': { request: z.strictObject({ index: z.number().int().min(0).max(19) }), response: z.strictObject({ removed: z.literal(true) }) },
+  'commands:history': {
+    request: z.strictObject({ projectId: z.string().max(64) }),
+    response: z.array(z.strictObject({ id: z.string(), label: z.string(), startedAt: z.string(), endedAt: z.string().nullable(), status: z.string(), exitCode: z.number().nullable() })),
+  },
+  'commands:log': {
+    request: z.strictObject({ id: z.string().max(64) }),
+    response: z.strictObject({ id: z.string(), label: z.string(), startedAt: z.string(), status: z.string(), exitCode: z.number().nullable(), output: z.string(), truncated: z.boolean() }),
+  },
   'git:init': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ created: z.boolean() }) },
   // AI providers. The renderer picks a provider and a model by name; main finds the program or the address, shows where a
   // request is going and asks before sending to a cloud service. Nothing here accepts a program path, a folder or a flag.

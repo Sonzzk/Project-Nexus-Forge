@@ -66,9 +66,14 @@ describe('progress', () => {
 });
 
 describe('templates and input rules', () => {
-  it('has the nine categories of spec §10, each with acceptance criteria and test requirements to start from', () => {
+  it('has the nine categories of spec §10 and eight Unreal ones, each with acceptance criteria and test requirements to start from', () => {
     expect(TASK_TEMPLATES.map((t) => t.id)).toEqual([...TEMPLATE_IDS]);
-    expect(TEMPLATE_IDS).toHaveLength(9);
+    expect(TASK_TEMPLATES.filter((t) => t.engine === undefined)).toHaveLength(9);
+    const unreal = TASK_TEMPLATES.filter((t) => t.engine === 'unreal');
+    expect(unreal.map((t) => t.subsystem)).toEqual(['Blueprints', 'C++', 'Level', 'Materials', 'Lighting', 'AI', 'Audio', 'Performance']);
+    expect(TEMPLATE_IDS).toHaveLength(17);
+    // binary assets are never edited as files: the templates that deal with them say a person makes the change in the editor
+    expect(unreal.filter((t) => ['ue-blueprint', 'ue-level'].includes(t.id)).every((t) => /binary|editor/i.test(t.description))).toBe(true);
     for (const template of TASK_TEMPLATES) {
       expect(template.acceptance.length).toBeGreaterThan(0);
       expect(template.testRequirements).not.toBe('');
