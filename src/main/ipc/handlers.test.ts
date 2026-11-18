@@ -21,7 +21,7 @@ import { createGitOps } from '../git';
 import { createDiagnosticsService } from '../diagnostics';
 import { createAttention, createSessionService } from '../sessions';
 import { createRetention } from '../logging';
-import { createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService } from '../engines';
+import { createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService, createServerRegistry, createWebService } from '../engines';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -97,6 +97,7 @@ async function setup() {
   const sessions = createSessionService({ db, redactor });
   const diagnostics = createDiagnosticsService({ db, activity, redactor, logDir: join(dir, 'logs'), appInfo: () => ({ name: 'T' }), settings: () => settings.all(), providers: () => providers.list(), resources: () => undefined, chooseFile: () => Promise.resolve(saveTo.path) });
   const retention = createRetention({ db, activity, logger, logDir: join(dir, 'logs'), settings: () => ({ activityDays: 180, processRunDays: 60, sessionDays: 365, usageDays: 730, logFiles: 5 }) });
+  const web = createWebService({ projects, commands, servers: createServerRegistry({ runner: noGit, activity, redactor }), openExternal: () => Promise.resolve() });
   const godot = createGodotService({ db, projects, runner: noGit, activity, permissions, confirm: confirmUi, logger, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({}) });
   const engines = createEngineService({ db, projects, runner: noGit, activity, permissions, confirm: confirmUi, logger, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({ SystemRoot: 'C:\\nowhere', ProgramData: 'C:\\nowhere', ProgramFiles: 'C:\\nowhere' }) });
   const assets = createAssetService({ db, projects, activity });
@@ -152,6 +153,7 @@ async function setup() {
     retention,
     engines,
     godot,
+    web,
     profiles: createProfileService({ db, projects, activity }),
     blender,
     assets,

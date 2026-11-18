@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SCRIPT_KINDS } from './web';
 
 // Scoped permissions (spec §14). Everything starts read-only. Three further scopes exist and none can be granted by the page, an
 // agent or a file: a grant is made only by a person answering a native window in the main process.
@@ -63,6 +64,10 @@ export const ProjectCommandSchema = z.object({
   source: z.enum(['script', 'engine']),
   /** Running it writes files in the project (a build writes Binaries and Intermediate). Said in the approval window. */
   writes: z.boolean(),
+  /** What the script is for (dev, build, lint, typecheck, test, other); a guide, the approval is bound to the text. */
+  kind: z.enum(SCRIPT_KINDS),
+  /** It starts a server that keeps running until stopped, so it starts from the web section and not from Run. */
+  longRunning: z.boolean(),
   approval: z
     .object({
       id: z.string().max(64),

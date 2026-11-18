@@ -3,6 +3,8 @@ export { createProfileService, type ProfileService } from './profile';
 export { describeUnrealProject } from './unreal/project';
 export { unrealContextText } from './unreal/context';
 export { discoverEngines, resolveEngine } from './unreal/engines';
+export { createWebService, packageManagerOf, webCommandsFor, type WebService } from './web/service';
+export { createServerRegistry } from './web/servers';
 export { createGodotService, type GodotService } from './godot/service';
 export { godotContextText } from './godot/context';
 export { describeGodotProject } from './godot/project';

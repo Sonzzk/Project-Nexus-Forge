@@ -7,6 +7,15 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 21 · Vite.js integration (2026-11-18, tag `step-21`)
+
+### Added
+- Web and Vite on the Integrations page: the project's `package.json`, lockfile and Vite config read from files (package manager from the `packageManager` field or the lockfile, Vite range and installed version, frameworks, dependencies with their installed versions), and every script with what it is for (dev, preview, build, lint, type-check, test).
+- Scripts run with the project's own package manager (`pnpm run dev`, not always npm) and still only after you approve each one; scripts that run to completion keep their output as before.
+- Dev and preview servers start from the page after approval, as processes the app owns: the port is read from the server's own output, it can be opened in your browser or stopped (the whole process tree), and every server ends when the app quits. A script that package.json does not list, one that is not a server, and an unapproved one are refused.
+- One install command, only from a lockfile (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable` or `--frozen-lockfile`, `bun install --frozen-lockfile`) and only as an approved command; the app never adds, upgrades or reinstalls packages on its own.
+- A dashboard card, Web and Vite. No new tables. Decision D-046, known issue KI-025.
+
 ## Step 20 · Godot integration (2026-11-18, tag `step-20`)
 
 ### Added

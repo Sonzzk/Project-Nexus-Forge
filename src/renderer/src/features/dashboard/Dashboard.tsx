@@ -480,6 +480,40 @@ function GodotCard() {
   );
 }
 
+/** The package manager, Vite version and servers of the selected web project; read from files and the app's own list of servers. */
+function WebCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const view = useJson(selected?.id, (id) => window.api.invoke('web:view', { projectId: id }));
+  const running = view?.servers.filter((s) => s.status === 'running') ?? [];
+  return (
+    <section className="card" aria-label="Web and Vite" data-feature="card.web">
+      <div className="card__head">
+        <h2>Web and Vite</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its web details.</p>}
+      {view !== undefined && !view.isWeb && <p className="empty">This project has no package.json.</p>}
+      {view?.project != null && (
+        <dl className="facts">
+          <dt>Package manager</dt>
+          <dd>{view.project.packageManager.name}</dd>
+          <dt>Vite</dt>
+          <dd>{view.project.vite.range === null ? 'Not used' : view.project.vite.installed === null ? `${view.project.vite.range} (not installed)` : view.project.vite.installed}</dd>
+          <dt>Scripts</dt>
+          <dd>
+            {view.project.scripts.length} ({view.project.scripts.filter((s) => s.approved).length} approved)
+          </dd>
+          <dt>Servers</dt>
+          <dd>{running.length === 0 ? 'None running' : running.map((s) => `${s.label}${s.port === null ? '' : ` on ${s.port}`}`).join(', ')}</dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function NextActionCard() {
   const { selected } = useProjects();
   const { go } = useNav();
@@ -584,6 +618,7 @@ export function Dashboard() {
         <EngineCard />
         <AssetsCard />
         <GodotCard />
+        <WebCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

@@ -2,6 +2,7 @@ import { BACKROOMS_DOMAINS, HORROR_CHECKLIST, type ProfileView } from '../../src
 import { SCOPE_TIERS } from '../../src/shared/tasks';
 import type { BlenderRunDetail, BlenderView, Brief, BriefFields, TrackedAsset } from '../../src/shared/blender';
 import type { GodotProject, GodotView } from '../../src/shared/godot';
+import type { WebServer, WebView } from '../../src/shared/web';
 import type { EngineInstall, UnrealProject, UnrealView } from '../../src/shared/unreal';
 import type { FakeApi } from './fake-api';
 
@@ -122,6 +123,7 @@ export function attachEngines(fake: FakeApi, seed: Partial<FakeEngines> = {}): F
     return profileView();
   };
   attachGodot(fake);
+  attachWeb(fake);
   attachBlender(fake); // the Blender section sits on the same page; tests that care re-attach it with a seed
   return state;
 }
@@ -290,5 +292,67 @@ export function attachGodot(fake: FakeApi, seed: Partial<FakeGodot> = {}): FakeG
     state.view = { ...state.view, configuredPaths: state.view.configuredPaths.filter((_, i) => i !== index) };
     return { removed: true };
   };
+  return state;
+}
+
+// ---- Web and Vite (Step 21) ----
+
+export const sampleWebView = (overrides: Partial<WebView> = {}): WebView => ({
+  isWeb: true,
+  project: {
+    name: 'vite-game',
+    version: '0.2.0',
+    private: true,
+    moduleType: 'module',
+    packageManager: { name: 'npm', source: 'lockfile', lockfile: 'package-lock.json', version: null, ambiguous: false },
+    viteConfig: 'vite.config.ts',
+    vite: { range: '^5.4.0', installed: null },
+    frameworks: ['Phaser'],
+    nodeEngine: '>=20',
+    scripts: [
+      { name: 'dev', body: 'vite', kind: 'dev', longRunning: true, label: 'npm run dev', approved: false, changed: false },
+      { name: 'build', body: 'tsc && vite build', kind: 'build', longRunning: false, label: 'npm run build', approved: true, changed: false },
+    ],
+    dependencies: [{ name: 'phaser', range: '^3.80.1', dev: false, installed: null }, { name: 'vite', range: '^5.4.0', dev: true, installed: null }],
+    dependencyCount: 2,
+    nodeModules: false,
+    notes: ['Dependencies are not installed (there is no node_modules folder), so scripts that need them will fail until they are installed.'],
+  },
+  servers: [],
+  capabilities: [
+    { id: 'server', label: 'Start an approved dev or preview server that this app owns', state: 'implemented', reason: '1 server script found.' },
+    { id: 'dependencies', label: 'Add, remove or upgrade packages', state: 'unavailable', reason: 'Not offered: this app never changes versions on its own.' },
+  ],
+  extraCommands: [{ label: 'npm: install exactly what package-lock.json says', writes: true, approved: false }],
+  checkedAt: '2026-10-24T08:00:00.000Z',
+  ...overrides,
+});
+
+export interface FakeWeb {
+  view: WebView;
+  opened: string[];
+}
+
+export function attachWeb(fake: FakeApi, seed: Partial<FakeWeb> = {}): FakeWeb {
+  const state: FakeWeb = { view: sampleWebView(), opened: [], ...seed };
+  const setServer = (server: WebServer | undefined, remove?: string): void => {
+    state.view = { ...state.view, servers: server === undefined ? state.view.servers.map((s) => (s.id === remove ? { ...s, status: 'stopped', url: null, endedAt: '2026-10-24T09:05:00.000Z' } : s)) : [server, ...state.view.servers] };
+  };
+  fake.handlers['web:view'] = () => state.view;
+  fake.handlers['commands:approve'] = (input) => {
+    const { label } = input as { label: string };
+    if (state.view.project !== null) state.view = { ...state.view, project: { ...state.view.project, scripts: state.view.project.scripts.map((s) => (s.label === label ? { ...s, approved: true } : s)) } };
+    return { approved: true };
+  };
+  fake.handlers['web:startServer'] = (input) => {
+    const { label } = input as { label: string };
+    setServer({ id: 'server-1', label, startedAt: '2026-10-24T09:00:00.000Z', endedAt: null, status: 'running', port: 5173, url: 'http://localhost:5173/', exitCode: null, output: 'VITE v5.4.0 ready\n  Local: http://localhost:5173/' });
+    return { started: true, serverId: 'server-1' };
+  };
+  fake.handlers['web:stopServer'] = (input) => {
+    setServer(undefined, (input as { serverId: string }).serverId);
+    return { stopped: true };
+  };
+  fake.handlers['web:openServer'] = () => (state.opened.push('http://localhost:5173/'), { opened: true });
   return state;
 }

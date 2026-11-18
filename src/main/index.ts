@@ -23,7 +23,7 @@ import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { createChangeService, createOverviewService } from './changes';
 import { createDiagnosticsService } from './diagnostics';
-import { assetTables, createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService, describeGodotProject, describeUnrealProject, godotContextText, unrealContextText } from './engines';
+import { assetTables, createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService, createServerRegistry, createWebService, describeGodotProject, describeUnrealProject, godotContextText, packageManagerOf, unrealContextText, webCommandsFor } from './engines';
 import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
@@ -395,7 +395,8 @@ async function startServices(): Promise<void> {
     workRoot: join(userDataDir, 'blender-work'),
   });
   const commands = createCommandService({
-    extra: (projectId) => [...engines.commandsFor(projectId), ...godot.commandsFor(projectId)],
+    extra: (projectId) => [...engines.commandsFor(projectId), ...godot.commandsFor(projectId), ...webCommandsFor(projects.get(projectId)?.rootPath ?? '')],
+    packageManager: packageManagerOf,
     db,
     projects,
     permissions,
@@ -405,6 +406,13 @@ async function startServices(): Promise<void> {
     confirm: (options) => ui.confirm(options),
     locate: (name) => locateProgram([`${name}.cmd`, `${name}.exe`]),
     timeoutMs: () => settingsStore.get('safety.commandTimeoutSeconds') * 1000,
+  });
+
+  const web = createWebService({
+    projects,
+    commands,
+    servers: createServerRegistry({ runner, activity, redactor }),
+    openExternal: (url) => shell.openExternal(url),
   });
 
   // Session records of agent runs and what is waiting on the person (Step 17). Streamed text goes to the window as it arrives.
@@ -519,6 +527,7 @@ async function startServices(): Promise<void> {
     retention,
     engines,
     godot,
+    web,
     profiles,
     blender,
     assets,

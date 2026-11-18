@@ -56,7 +56,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('git', 'Git and Changes', 'available', 7, 'Status, branches and recent commits, agent changes with diffs to commit, reject or revert, checkpoints and working trees.'),
   nav('testing', 'Testing', 'upcoming', 23),
   nav('assets', 'Assets', 'upcoming', 22),
-  nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits; Unreal Engine installs and projects, Blender scenes and headless runs on copies, Godot projects, export presets and approved commands, asset briefs, and the optional Backrooms profile.'),
+  nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits; Unreal Engine installs and projects, Blender scenes and headless runs on copies, Godot projects, export presets and approved commands, web projects with Vite scripts and servers this app owns, asset briefs, and the optional Backrooms profile.'),
   nav(
     'activity',
     'Activity and Logs',
@@ -197,6 +197,15 @@ export const FEATURES: readonly FeatureStatus[] = [
     state: 'available',
     step: 20,
     note: 'The Godot download the selected project would use, its export presets and test framework; read from files only.',
+  },
+  {
+    id: 'card.web',
+    kind: 'card',
+    label: 'Web and Vite',
+    section: 'integrations',
+    state: 'available',
+    step: 21,
+    note: 'The package manager, Vite version, scripts and running servers of the selected web project; read from files and the app\'s own server list.',
   },
   {
     id: 'card.attention',

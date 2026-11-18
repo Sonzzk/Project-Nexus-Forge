@@ -14,7 +14,7 @@ import type { Review } from '@shared/changes';
 import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
-import { attachBlender, attachEngines, attachGodot, sampleBlenderView, sampleGodotView, sampleUnrealView, type FakeBlender, type FakeEngines, type FakeGodot } from '../../../../test/mocks/fake-engines';
+import { attachBlender, attachEngines, attachGodot, attachWeb, sampleBlenderView, sampleGodotView, sampleUnrealView, sampleWebView, type FakeBlender, type FakeEngines, type FakeGodot, type FakeWeb } from '../../../../test/mocks/fake-engines';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -1149,7 +1149,7 @@ describe('the AI Workbench', () => {
     await waitFor(() => expect(screen.queryByText(/That run was interrupted/)).toBeNull());
   });
 
-  const cmd = (label: string, overrides: Partial<PermissionsView['commands'][number]> = {}): PermissionsView['commands'][number] => ({ label, argv: ['npm', 'run', label.replace('npm run ', '')], body: 'vite build', risks: [], source: 'script', writes: false, approval: null, ...overrides });
+  const cmd = (label: string, overrides: Partial<PermissionsView['commands'][number]> = {}): PermissionsView['commands'][number] => ({ label, argv: ['npm', 'run', label.replace('npm run ', '')], body: 'vite build', risks: [], source: 'script', writes: false, kind: 'build', longRunning: false, approval: null, ...overrides });
 
   it('marks an engine command and says it writes files in the project, so it is not mistaken for a script', async () => {
     const { user } = await openWorkbench({ tasks: [sampleTask(1)], permissions: { grants: [], approvals: [], commands: [cmd('Build Backrooms (Win64 Development)', { source: 'engine', writes: true, argv: ['C:\\Engines\\UE_5.5\\Engine\\Build\\BatchFiles\\Build.bat'], body: 'Build.bat Backrooms Win64 Development' })], commandsNote: '' } });
@@ -1260,13 +1260,15 @@ describe('integrations and AI help', () => {
   let engines: FakeEngines;
   let blender: FakeBlender;
   let godot: FakeGodot;
-  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}, blenderSeed: Parameters<typeof attachBlender>[1] = {}, godotSeed: Parameters<typeof attachGodot>[1] = {}) => {
+  let web: FakeWeb;
+  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}, blenderSeed: Parameters<typeof attachBlender>[1] = {}, godotSeed: Parameters<typeof attachGodot>[1] = {}, webSeed: Parameters<typeof attachWeb>[1] = {}) => {
     const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
     providers = attachProviders(fake, seed);
     engines = attachEngines(fake, engineSeed);
     blender = attachBlender(fake, blenderSeed);
     godot = attachGodot(fake, godotSeed);
     attachPlanning(fake);
+    web = attachWeb(fake, webSeed); // after the planning fake, so its approval handler (which also updates the script list) is the one used
     await user.click(within(sidebar()).getByRole('button', { name: /^Integrations/ }));
     await screen.findByRole('heading', { name: 'Integrations' });
     return user;
@@ -1528,6 +1530,39 @@ describe('integrations and AI help', () => {
       const caps = within(card).getByRole('table', { name: 'Blender capability report' });
       expect(within(caps).getByText('Unavailable')).toBeTruthy();
       expect(within(card).getByText(/Your \.blend files are never opened for writing/)).toBeTruthy();
+    });
+
+    it('shows the package manager, scripts and dependencies of a web project, and starts only an approved server', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Web and Vite' });
+      const project = await within(card).findByLabelText('Web project vite-game');
+      expect(within(project).getByText(/npm \(from package-lock\.json\)/)).toBeTruthy();
+      expect(within(project).getByText(/\^5\.4\.0 \(not installed\); config vite\.config\.ts/)).toBeTruthy();
+      expect(within(project).getByText(/Dependencies are not installed/)).toBeTruthy();
+      await user.click(within(project).getByRole('button', { name: 'Show the list' }));
+      expect(within(within(project).getByRole('table', { name: 'Dependencies' })).getByText('phaser')).toBeTruthy();
+      const scripts = within(project).getByRole('table', { name: 'Scripts' });
+      expect(within(scripts).getByText('Dev server')).toBeTruthy();
+      expect(within(scripts).getByText(/Approved: run it under Permissions/)).toBeTruthy(); // build runs to completion elsewhere
+      expect(within(scripts).queryByRole('button', { name: 'Start npm run dev' })).toBeNull(); // not approved yet
+      await user.click(within(scripts).getByRole('button', { name: 'Approve npm run dev' }));
+      await user.click(await within(scripts).findByRole('button', { name: 'Start npm run dev' }));
+      expect(fake.calls.find((c) => c.channel === 'web:startServer')?.input).toEqual({ projectId: 'project-1', label: 'npm run dev' }); // a label the list showed, never a command
+      const servers = await within(card).findByRole('list', { name: 'Servers' });
+      expect(within(servers).getByText('running')).toBeTruthy();
+      expect(within(servers).getByText(/port 5173/)).toBeTruthy();
+      await user.click(within(servers).getByRole('button', { name: 'Open http://localhost:5173/ in your browser' }));
+      expect(web.opened).toEqual(['http://localhost:5173/']);
+      await user.click(within(servers).getByRole('button', { name: 'Stop npm run dev' }));
+      expect(await within(card).findByText('The server was stopped.')).toBeTruthy();
+      expect(within(servers).getByText('stopped')).toBeTruthy();
+      expect(within(card).getByText(/never installs, adds or upgrades packages/)).toBeTruthy();
+    });
+
+    it('says plainly when the project has no package.json', async () => {
+      await openIntegrations({}, {}, {}, {}, { view: sampleWebView({ isWeb: false, project: null, extraCommands: [] }) });
+      const card = await screen.findByRole('region', { name: 'Web and Vite' });
+      expect(await within(card).findByText(/is not a web project/)).toBeTruthy();
     });
 
     it('shows the Godot download, project facts, presets with the reason one has no command, and the approved-command route', async () => {

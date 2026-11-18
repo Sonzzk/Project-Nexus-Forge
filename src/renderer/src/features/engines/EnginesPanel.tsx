@@ -6,6 +6,7 @@ import { formatTime } from '../../lib/activity';
 import { useProjects } from '../../lib/projects';
 import { BlenderPanel } from '../blender/BlenderPanel';
 import { GodotPanel } from '../godot/GodotPanel';
+import { WebPanel } from '../web/WebPanel';
 import { BackroomsProfile } from './BackroomsProfile';
 
 const mb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -250,6 +251,8 @@ export function EnginesPanel() {
           </div>
         )}
       </section>
+
+      <WebPanel />
 
       <GodotPanel />
 

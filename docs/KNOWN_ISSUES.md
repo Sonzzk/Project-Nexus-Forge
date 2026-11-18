@@ -146,3 +146,14 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **The version string's form is observed, not documented.** If a future Godot prints something else, the version comes from the file name.
 - **GDScript context is names only.** `class_name` and `extends` come from the first 8 KB of each file; an inner class or a `class_name` after line 8 KB is missed. C# classes are not listed.
 - **The editor window is not tracked beyond the process.** If the person closes the editor in Godot, the app notices when the process ends; an editor started outside the app is unknown to it.
+
+## KI-025 · Web and Vite integration limits (found in Step 21, accepted)
+
+- **No real Vite was run.** Vite is not installed in any fixture and installing it is not allowed here. The server tests use a Node script that prints Vite's `Local:` line, started through the real npm. Vite's own output, `--host` banners, restarts on config changes and port fallbacks (5174 when 5173 is taken) are only as handled as the one printed line.
+- **Yarn 1 (classic) is unverified.** Its `--frozen-lockfile` flag was not confirmed from the current documentation page. pnpm, Yarn 2+, Bun and npm forms are from their current docs. None of the non-npm managers was run, and their program lookup (`pnpm.cmd`, `yarn.cmd`, `bun.exe`) was not tried on this PC.
+- **A script that is a server under another name** (for example `go` or `watch`) is shown as Other and runs to completion under the command timeout, which stops it and records a timeout. The classifier is a guide.
+- **The port is only what the server prints.** A server that prints no localhost address shows no port and cannot be opened from the app; one that prints its network address only (`--host` on some tools) is not recognised. The first localhost address printed wins.
+- **Servers exist for one app session.** They end when the app quits and are not restored at the next start; the list shows the last five ended servers per project until then.
+- **Output is a tail.** The page shows the last 6,000 characters of a server's redacted output, refreshed when the page reloads or an activity event arrives, not live.
+- **Dependencies are listed, not audited.** Installed versions come from each package's own `package.json`; no vulnerability, license or outdated check is made, and workspaces (monorepos with several `package.json` files) are not followed: only the top-level `package.json` is read.
+- **The install command deletes `node_modules` (npm) and runs install scripts.** It is approved like any command, and nothing checks the package registry's reachability or the lockfile's integrity beyond what the package manager does.

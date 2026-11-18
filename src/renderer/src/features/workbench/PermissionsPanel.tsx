@@ -117,6 +117,8 @@ export function PermissionsPanel() {
                         Approve again…
                       </button>
                     </>
+                  ) : command.longRunning ? (
+                    <span className="muted">This keeps running, so it starts from the Web section of the Integrations page, where it can be stopped. </span>
                   ) : (
                     <button
                       type="button"

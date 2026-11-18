@@ -1,0 +1,20 @@
+{
+  "name": "vite-game",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "postbuild": "node scripts/size.js",
+    "preview": "vite preview --port 4173",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": { "phaser": "^3.80.1" },
+  "devDependencies": { "vite": "^5.4.0", "typescript": "^5.5.0", "vitest": "^2.0.0", "eslint": "^9.0.0" }
+}

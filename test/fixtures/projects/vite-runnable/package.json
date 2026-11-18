@@ -1,0 +1,10 @@
+{
+  "name": "vite-runnable",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "lint": "node -e \"console.log(String.fromCharCode(108,105,110,116,32,111,107))\"",
+    "crash": "node -e \"process.exit(3)\""
+  }
+}

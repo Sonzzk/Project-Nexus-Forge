@@ -15,7 +15,7 @@ import type { CommandService, PermissionService, WriteGate } from '../security';
 import type { ChangeService, OverviewService } from '../changes';
 import type { DiagnosticsService } from '../diagnostics';
 import type { SessionService } from '../sessions';
-import type { AssetService, BlenderService, EngineService, GodotService, ProfileService } from '../engines';
+import type { AssetService, BlenderService, EngineService, GodotService, ProfileService, WebService } from '../engines';
 import type { AttentionItem } from '@shared/sessions';
 import type { Retention } from '../logging';
 import { resolveInside } from '../security';
@@ -50,6 +50,7 @@ export interface HandlerServices {
   retention: Retention;
   engines: EngineService;
   godot: GodotService;
+  web: WebService;
   profiles: ProfileService;
   blender: BlenderService;
   assets: AssetService;
@@ -196,6 +197,10 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('engines:open', ({ projectId, target }) => services.engines.open(projectId, target));
   ipc.handle('engines:addPath', () => services.engines.addEnginePath());
   ipc.handle('engines:removePath', ({ index }) => services.engines.removeEnginePath(index));
+  ipc.handle('web:view', ({ projectId }) => services.web.view(projectId));
+  ipc.handle('web:startServer', ({ projectId, label }) => services.web.startServer(projectId, label));
+  ipc.handle('web:stopServer', ({ serverId }) => services.web.stopServer(serverId));
+  ipc.handle('web:openServer', ({ serverId }) => services.web.openServer(serverId));
   ipc.handle('godot:view', ({ projectId }) => services.godot.view(projectId));
   ipc.handle('godot:open', ({ projectId, target }) => services.godot.open(projectId, target));
   ipc.handle('godot:launchEditor', ({ projectId }) => services.godot.launchEditor(projectId));
