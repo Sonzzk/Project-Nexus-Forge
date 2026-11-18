@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 14)
+## Schema (version 15)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -53,7 +53,7 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `engine_paths` | 13 | folder, time added | Engine folders you added by hand. Only main inserts here, from a native folder window. Not exported: a folder only means something on this PC. |
 | `project_profiles` | 13 | project (cascade), profile (`backrooms`), on or off, the systems you confirmed (JSON), the checklist state (JSON), time | The optional game profile. Holds only what you set. Not exported. |
 
-| `tool_paths` | 14 | tool (`blender`), folder, time added | Install folders you added by hand. Only main inserts here, from a native folder window. Not exported. |
+| `tool_paths` | 14, 15 | tool (`blender` or `godot`; `godot` since version 15), folder, time added | Install folders you added by hand. Only main inserts here, from a native folder window. Not exported. |
 | `approved_scripts` | 14 | project (cascade), script path, hash of its text, time approved, time taken back | A Blender script you approved; a changed script is not run. Not exported, so a file cannot approve a script. |
 | `blender_runs` | 14 | project (cascade), kind (inspect or script), source scene and script, Blender folder and version, times, status, exit code, outcome, whether the original was left unchanged, the run folder, output files, the scene description, the redacted log, the error summary | Every headless run. Deleted with its folder after `retention.processRunDays`. Not exported. |
 | `tracked_assets` | 14 | project (cascade), project-relative path, kind, note, tags, size and modification time when tracked, time | Files you track. **Exported.** |

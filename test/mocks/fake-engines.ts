@@ -1,6 +1,7 @@
 import { BACKROOMS_DOMAINS, HORROR_CHECKLIST, type ProfileView } from '../../src/shared/backrooms';
 import { SCOPE_TIERS } from '../../src/shared/tasks';
 import type { BlenderRunDetail, BlenderView, Brief, BriefFields, TrackedAsset } from '../../src/shared/blender';
+import type { GodotProject, GodotView } from '../../src/shared/godot';
 import type { EngineInstall, UnrealProject, UnrealView } from '../../src/shared/unreal';
 import type { FakeApi } from './fake-api';
 
@@ -120,6 +121,7 @@ export function attachEngines(fake: FakeApi, seed: Partial<FakeEngines> = {}): F
     if (patch.checked !== undefined) state.profile.checked = patch.checked;
     return profileView();
   };
+  attachGodot(fake);
   attachBlender(fake); // the Blender section sits on the same page; tests that care re-attach it with a seed
   return state;
 }
@@ -218,6 +220,75 @@ export function attachBlender(fake: FakeApi, seed: Partial<FakeBlender> = {}): F
   fake.handlers['briefs:handoff'] = (input) => {
     const brief = state.briefs.find((b) => b.id === (input as { id: string }).id);
     return { text: `# Import handoff: ${brief?.name ?? '?'}\n\nChecklist`, basedOnInspect: null };
+  };
+  return state;
+}
+
+// ---- Godot (Step 20) ----
+
+export const sampleGodotProject = (overrides: Partial<GodotProject> = {}): GodotProject => ({
+  name: 'Hall Runner',
+  configVersion: 5,
+  engineVersion: '4.3',
+  features: ['4.3', 'Forward Plus'],
+  renderer: 'Forward Plus',
+  csharp: false,
+  mainScene: 'res://scenes/main.tscn',
+  autoloads: [{ name: 'Game', path: 'res://scripts/game.gd' }],
+  enabledPlugins: [],
+  addons: [{ folder: 'gut', name: 'Gut', version: '9.3.0' }],
+  presets: [
+    { name: 'Windows Desktop', platform: 'Windows Desktop', runnable: true, exportPath: 'builds/game.exe', skipped: '' },
+    { name: 'Web', platform: 'Web', runnable: false, exportPath: '', skipped: 'The preset has no export path, so there is nothing to export to.' },
+  ],
+  scripts: { gdscript: 4, csharp: 0, scenes: 1, resources: 0, classes: [{ name: 'Player', path: 'scripts/player.gd', extends: 'CharacterBody2D' }], truncated: false },
+  tests: { framework: 'gut', directory: 'test', hasConfig: false },
+  notes: [],
+  ...overrides,
+});
+
+export const sampleGodotView = (overrides: Partial<GodotView> = {}): GodotView => ({
+  isGodot: true,
+  project: sampleGodotProject(),
+  installs: [{ folder: 'C:\\Godot\\4.3', exe: 'C:\\Godot\\4.3\\Godot_v4.3-stable_win64.exe', consoleExe: 'C:\\Godot\\4.3\\Godot_v4.3-stable_win64_console.exe', version: '4.3', release: 'stable', mono: false, source: 'configured', note: '' }],
+  configuredPaths: ['C:\\Godot\\4.3'],
+  resolved: { folder: 'C:\\Godot\\4.3', version: '4.3', how: 'config/features names 4.3, which matches C:\\Godot\\4.3' },
+  resolveNote: '',
+  editor: { running: false, startedAt: null },
+  capabilities: [
+    { id: 'import', label: 'Import resources (headless, approved)', state: 'implemented', reason: '' },
+    { id: 'script-check', label: 'Parse-check GDScript files', state: 'unavailable', reason: 'Not offered: per-file commands were not built.' },
+  ],
+  commands: [{ label: 'Godot: import resources (headless)', writes: true }, { label: 'Godot: export Windows Desktop (release)', writes: true }],
+  checkedAt: '2026-10-24T08:00:00.000Z',
+  ...overrides,
+});
+
+export interface FakeGodot {
+  view: GodotView;
+  /** Whether the editor window was agreed to. */
+  agree: boolean;
+  opened: string[];
+}
+
+export function attachGodot(fake: FakeApi, seed: Partial<FakeGodot> = {}): FakeGodot {
+  const state: FakeGodot = { view: sampleGodotView(), agree: true, opened: [], ...seed };
+  fake.handlers['godot:view'] = () => state.view;
+  fake.handlers['godot:open'] = (input) => (state.opened.push((input as { target: string }).target), { opened: true });
+  fake.handlers['godot:launchEditor'] = () => {
+    if (state.agree) state.view = { ...state.view, editor: { running: true, startedAt: '2026-10-24T09:00:00.000Z' } };
+    return { started: state.agree };
+  };
+  fake.handlers['godot:stopEditor'] = () => {
+    const was = state.view.editor.running;
+    state.view = { ...state.view, editor: { running: false, startedAt: null } };
+    return { stopped: was };
+  };
+  fake.handlers['godot:addPath'] = () => ({ added: false });
+  fake.handlers['godot:removePath'] = (input) => {
+    const { index } = input as { index: number };
+    state.view = { ...state.view, configuredPaths: state.view.configuredPaths.filter((_, i) => i !== index) };
+    return { removed: true };
   };
   return state;
 }

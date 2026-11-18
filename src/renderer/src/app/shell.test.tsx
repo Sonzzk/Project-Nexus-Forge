@@ -14,7 +14,7 @@ import type { Review } from '@shared/changes';
 import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
-import { attachBlender, attachEngines, sampleBlenderView, sampleUnrealView, type FakeBlender, type FakeEngines } from '../../../../test/mocks/fake-engines';
+import { attachBlender, attachEngines, attachGodot, sampleBlenderView, sampleGodotView, sampleUnrealView, type FakeBlender, type FakeEngines, type FakeGodot } from '../../../../test/mocks/fake-engines';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
 
@@ -1259,11 +1259,13 @@ describe('integrations and AI help', () => {
   let providers: FakeProviders;
   let engines: FakeEngines;
   let blender: FakeBlender;
-  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}, blenderSeed: Parameters<typeof attachBlender>[1] = {}) => {
+  let godot: FakeGodot;
+  const openIntegrations = async (seed: Parameters<typeof attachProviders>[1] = {}, engineSeed: Parameters<typeof attachEngines>[1] = {}, blenderSeed: Parameters<typeof attachBlender>[1] = {}, godotSeed: Parameters<typeof attachGodot>[1] = {}) => {
     const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
     providers = attachProviders(fake, seed);
     engines = attachEngines(fake, engineSeed);
     blender = attachBlender(fake, blenderSeed);
+    godot = attachGodot(fake, godotSeed);
     attachPlanning(fake);
     await user.click(within(sidebar()).getByRole('button', { name: /^Integrations/ }));
     await screen.findByRole('heading', { name: 'Integrations' });
@@ -1526,6 +1528,53 @@ describe('integrations and AI help', () => {
       const caps = within(card).getByRole('table', { name: 'Blender capability report' });
       expect(within(caps).getByText('Unavailable')).toBeTruthy();
       expect(within(card).getByText(/Your \.blend files are never opened for writing/)).toBeTruthy();
+    });
+
+    it('shows the Godot download, project facts, presets with the reason one has no command, and the approved-command route', async () => {
+      await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Godot' });
+      const downloads = await within(card).findByRole('table', { name: 'Godot downloads' });
+      expect(within(downloads).getByText('4.3')).toBeTruthy();
+      const project = within(card).getByLabelText('Godot project Hall Runner');
+      expect(within(project).getByText(/Godot 4\.3, Forward Plus/)).toBeTruthy();
+      expect(within(project).getByText('Player')).toBeTruthy();
+      const presets = within(card).getByRole('table', { name: 'Export presets' });
+      expect(within(presets).getByText('Offered')).toBeTruthy();
+      expect(within(presets).getByText(/has no export path/)).toBeTruthy();
+      expect(within(card).getByText('Godot: export Windows Desktop (release)')).toBeTruthy();
+      expect(within(card).getByText(/Agents cannot run these commands/)).toBeTruthy();
+      expect(within(within(card).getByRole('table', { name: 'Godot capability report' })).getByText('Unavailable')).toBeTruthy();
+    });
+
+    it('starts and stops the editor by naming the project only, and says when the window was declined', async () => {
+      const user = await openIntegrations();
+      const card = await screen.findByRole('region', { name: 'Godot' });
+      await user.click(await within(card).findByRole('button', { name: 'Start the Godot editor…' }));
+      expect(await within(card).findByText(/This app owns it and closes it at quit/)).toBeTruthy();
+      await user.click(await within(card).findByRole('button', { name: 'Stop the Godot editor' }));
+      expect(await within(card).findByText('The editor was asked to stop.')).toBeTruthy();
+      expect(fake.calls.filter((c) => c.channel === 'godot:launchEditor' || c.channel === 'godot:stopEditor').map((c) => [c.channel, c.input])).toEqual([
+        ['godot:launchEditor', { projectId: 'project-1' }],
+        ['godot:stopEditor', { projectId: 'project-1' }],
+      ]);
+      godot.agree = false;
+      await user.click(await within(card).findByRole('button', { name: 'Start the Godot editor…' }));
+      expect(await within(card).findByText('The editor was not started.')).toBeTruthy();
+      await user.click(within(card).getByRole('button', { name: 'Open the add-ons folder' }));
+      expect(godot.opened).toEqual(['addons']);
+    });
+
+    it('says plainly when no Godot download is found, or the project is not a Godot project', async () => {
+      await openIntegrations({}, {}, {}, { view: sampleGodotView({ installs: [], configuredPaths: [], resolved: null, resolveNote: 'not found', commands: [] }) });
+      const card = await screen.findByRole('region', { name: 'Godot' });
+      expect(await within(card).findByText(/No Godot download was found/)).toBeTruthy();
+      expect(within(card).getByText('not found')).toBeTruthy();
+    });
+
+    it('says plainly when the project is not Godot', async () => {
+      await openIntegrations({}, {}, {}, { view: sampleGodotView({ isGodot: false, project: null, commands: [] }) });
+      const card = await screen.findByRole('region', { name: 'Godot' });
+      expect(await within(card).findByText(/is not a Godot project/)).toBeTruthy();
     });
 
     it('says plainly when Blender is not installed or the project has no .blend', async () => {

@@ -446,6 +446,40 @@ function AssetsCard() {
   );
 }
 
+/** The Godot download the selected project would use and whether it can be exported or tested; read from files only. */
+function GodotCard() {
+  const { selected } = useProjects();
+  const { go } = useNav();
+  const view = useJson(selected?.id, (id) => window.api.invoke('godot:view', { projectId: id }));
+  const ready = view?.capabilities.filter((c) => c.state === 'implemented').length ?? 0;
+  return (
+    <section className="card" aria-label="Godot" data-feature="card.godot">
+      <div className="card__head">
+        <h2>Godot</h2>
+        <button type="button" className="btn" onClick={() => go('integrations')}>
+          Open
+        </button>
+      </div>
+      {selected === undefined && <p className="empty">Select a project to see its Godot details.</p>}
+      {view !== undefined && !view.isGodot && <p className="empty">This project has no project.godot.</p>}
+      {view?.project != null && (
+        <dl className="facts">
+          <dt>Godot project</dt>
+          <dd>{view.project.name}</dd>
+          <dt>Download</dt>
+          <dd>{view.resolved === null ? view.resolveNote : `Godot ${view.resolved.version ?? 'unknown version'}`}</dd>
+          <dt>Commands</dt>
+          <dd>{view.commands.length === 0 ? 'None offered' : `${view.commands.length} (${view.project.presets.filter((p) => p.skipped === '').length} export presets)`}</dd>
+          <dt>Editor</dt>
+          <dd>{view.editor.running ? 'Running (owned by this app)' : 'Not running'}</dd>
+          <dt>Capabilities ready</dt>
+          <dd>{ready} of {view.capabilities.length}</dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function NextActionCard() {
   const { selected } = useProjects();
   const { go } = useNav();
@@ -549,6 +583,7 @@ export function Dashboard() {
         <UsageCard />
         <EngineCard />
         <AssetsCard />
+        <GodotCard />
         <CurrentTaskCard />
         <NextActionCard />
         <ProvidersCard />

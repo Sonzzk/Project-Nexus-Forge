@@ -7,6 +7,14 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 20 · Godot integration (2026-11-18, tag `step-20`)
+
+### Added
+- Godot on the Integrations page: downloads (folders you add, `%USERPROFILE%\Godot` and other default folders, PATH) with the version `--version` prints, the project's `project.godot` and `export_presets.cfg` read from files (version, renderer, C#, main scene, autoloads, add-ons, presets, `class_name` scripts, GUT), and a capability report that says why something is not offered.
+- Commands only from what the project holds: import resources, export each usable preset (release and debug, to the path the preset itself holds, only when its folder exists) and run GUT tests. Each goes through the approved-commands window, runs as an argument array, and its output is kept. A project is matched to the same Godot version and never to another one; Godot 3 projects get no commands.
+- Start and stop the Godot editor from the app after a confirmation; the app owns the process and ends it at quit, and an editor that fails to start is reported instead of shown as running.
+- Godot context (version, main scene, autoloads, add-ons, presets, classes) in context packs, and a dashboard card, Godot. Schema v15 lets `tool_paths` hold Godot folders. Decision D-045, known issue KI-024.
+
 ## Step 19 · Blender integration (2026-11-02, tag `step-19`)
 
 ### Added

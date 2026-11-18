@@ -23,7 +23,7 @@ import { createUsageService, usageTables } from './usage';
 import { createCommandService, createPermissionService, createWriteGate } from './security';
 import { createChangeService, createOverviewService } from './changes';
 import { createDiagnosticsService } from './diagnostics';
-import { assetTables, createAssetService, createBlenderService, createEngineService, createProfileService, describeUnrealProject, unrealContextText } from './engines';
+import { assetTables, createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService, describeGodotProject, describeUnrealProject, godotContextText, unrealContextText } from './engines';
 import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
@@ -231,8 +231,9 @@ async function startServices(): Promise<void> {
   const packs = createPackService({
     engineContext: (projectId) => {
       const found = projects.get(projectId);
-      const described = found === undefined ? undefined : describeUnrealProject(found.rootPath);
-      return described === undefined ? '' : unrealContextText(described);
+      const unreal = found === undefined ? undefined : describeUnrealProject(found.rootPath);
+      const godot = found === undefined ? undefined : describeGodotProject(found.rootPath);
+      return `${unreal === undefined ? '' : unrealContextText(unreal)}${godot === undefined ? '' : godotContextText(godot)}`;
     },
     db,
     projects,
@@ -354,6 +355,23 @@ async function startServices(): Promise<void> {
     },
     env: () => process.env,
   });
+  const godot = createGodotService({
+    db,
+    projects,
+    runner,
+    activity,
+    permissions,
+    confirm: (options) => ui.confirm(options),
+    logger: logger.child('godot'),
+    openPath: (fullPath) => shell.openPath(fullPath),
+    pickFolder: async (title) => {
+      const box = { title, properties: ['openDirectory' as const] };
+      const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const result = window === undefined ? await dialog.showOpenDialog(box) : await dialog.showOpenDialog(window, box);
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    env: () => process.env,
+  });
   const profiles = createProfileService({ db, projects, activity });
   const assets = createAssetService({ db, projects, activity });
   const blender = createBlenderService({
@@ -377,7 +395,7 @@ async function startServices(): Promise<void> {
     workRoot: join(userDataDir, 'blender-work'),
   });
   const commands = createCommandService({
-    extra: (projectId) => engines.commandsFor(projectId),
+    extra: (projectId) => [...engines.commandsFor(projectId), ...godot.commandsFor(projectId)],
     db,
     projects,
     permissions,
@@ -500,6 +518,7 @@ async function startServices(): Promise<void> {
     diagnostics,
     retention,
     engines,
+    godot,
     profiles,
     blender,
     assets,

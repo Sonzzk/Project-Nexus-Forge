@@ -16,6 +16,7 @@ import {
 import { AGENT_ROLE_IDS, AgentRoleSchema, PromptPreviewSchema, QueueViewSchema, RunSchema, WorkflowPreviewSchema, WorkflowRequestSchema } from '../agents';
 import { AttentionItemSchema, SessionSchema, SessionSummarySchema } from '../sessions';
 import { ProfilePatchSchema, ProfileViewSchema } from '../backrooms';
+import { GODOT_OPEN_TARGETS, GodotViewSchema } from '../godot';
 import { OPEN_TARGETS, UnrealViewSchema } from '../unreal';
 import { BlenderRunDetailSchema, BlenderViewSchema, BriefFieldsSchema, BriefSchema, TrackedAssetSchema } from '../blender';
 import { ActivityExportRequestSchema, ActivityQuerySchema, FileExportResultSchema, LogsRequestSchema, LogsResultSchema } from '../diagnostics';
@@ -250,6 +251,14 @@ export const contract = {
   'engines:open': { request: z.strictObject({ projectId: z.string().max(64), target: z.enum(OPEN_TARGETS) }), response: z.strictObject({ opened: z.boolean() }) },
   'engines:addPath': { request: noInput, response: z.strictObject({ added: z.boolean() }) },
   'engines:removePath': { request: z.strictObject({ index: z.number().int().min(0).max(19) }), response: z.strictObject({ removed: z.literal(true) }) },
+  // Godot (Step 20). The page names a project; main reads project.godot, finds the matching download, and asks in a window before it
+  // starts the editor. Export, import and test commands are not channels: they go through the approved-commands pipeline.
+  'godot:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: GodotViewSchema },
+  'godot:open': { request: z.strictObject({ projectId: z.string().max(64), target: z.enum(GODOT_OPEN_TARGETS) }), response: z.strictObject({ opened: z.boolean() }) },
+  'godot:launchEditor': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ started: z.boolean() }) },
+  'godot:stopEditor': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ stopped: z.boolean() }) },
+  'godot:addPath': { request: noInput, response: z.strictObject({ added: z.boolean() }) },
+  'godot:removePath': { request: z.strictObject({ index: z.number().int().min(0).max(19) }), response: z.strictObject({ removed: z.literal(true) }) },
   // Blender and assets (Step 19). The page names a project and a project-relative path taken from what main listed; main resolves it
   // inside the project, starts Blender only on a copy, and asks in a window before opening a scene or approving a script.
   'blender:view': { request: z.strictObject({ projectId: z.string().max(64) }), response: BlenderViewSchema },

@@ -1,7 +1,7 @@
 # Status
 
-**Current step:** Step 19 · Blender integration: done (2026-11-02, tag `step-19`)
-**Next step:** Step 20 · Godot integration, see [ROADMAP.md](ROADMAP.md#step-20--godot-integration).
+**Current step:** Step 20 · Godot integration: done (2026-11-18, tag `step-20`)
+**Next step:** Step 21 · Vite.js integration, see [ROADMAP.md](ROADMAP.md#step-21--vitejs-integration).
 
 ## Completed
 - **Step 1.** Spec preserved verbatim; dependency map, roadmap with 29 plan blocks and requirements trace written; CLAUDE.md and progress notes created; docs check added. Verified by `node scripts/check-docs.mjs` (passed) and `node --test scripts/check-docs.test.mjs` (7 of 7 passed, including tamper, forward-dependency, model-mismatch, missing-field and untraced-requirement cases). The spec's SHA-256 matches the text of the original request.
@@ -24,6 +24,7 @@
 - **Step 17.** The Activity and Logs page (filtered, searchable, redacted export; live sessions with only observed facts; the command queue; resources; the log, diagnostics bundle and retention limits), session records that survive a restart, and the dashboard cards Needs your attention and Resources (ARCHITECTURE.md section 30, D-042). Verified by all six gates (below).
 - **Step 18.** Unreal Engine on the Integrations page: engine discovery (launcher list, registered builds, folders you add, default folder), a read-only description of the Unreal project, open project and folders, approved build commands with kept logs, a capability report, Unreal context in packs and templates, an Engine dashboard card, and the optional Backrooms profile (ARCHITECTURE.md section 31, D-043). Verified by all six gates (below) and a read-only check of this PC's engine and four projects; no real build was run.
 - **Step 19.** Blender on the Integrations page: install discovery (folders you add, default folders, PATH), `.blend` scenes with the saving Blender version, headless inspect and approved-script runs that always work on a copy and record whether the original is unchanged, open a scene through Windows, tracked asset files, asset briefs with naming checks, import notes, and the Assets and Blender dashboard card (ARCHITECTURE.md section 32, D-044). Verified by all six gates (below), by a real headless Blender in the tests, and by a read-only check of this PC's real scenes.
+- **Step 20.** Godot on the Integrations page: downloads (added folders, default folders, PATH) with their version, `project.godot` and `export_presets.cfg` read from files, commands only from what the project holds (import, export of each usable preset, GUT tests) through the approved-commands window with kept logs, an owned editor that can be started and stopped, Godot context in packs and a dashboard card (ARCHITECTURE.md section 33, D-045). Verified by all six gates (below) and a read-only check of this PC's Godot; **no real Godot command or editor run was made (KI-024).**
 
 ## In progress
 - Nothing.
@@ -33,7 +34,8 @@
 - Optional tools (GitHub CLI, Codex CLI, Blender, Godot, Unreal) are not needed to build the app; their steps report them as not installed.
 
 ## Next
-- Step 20: the Godot adapter: parse `project.godot` (name, features, version hints) and `export_presets.cfg`; configure the Godot executable and read its real version; launch the editor; run approved headless, test and export commands (verify the current command-line options); collect GDScript context; capture output. Commands come only from discovered configuration, never invented; a live run is tested if Godot is installed, otherwise reported as not run. Builds on the approved-commands pipeline and run logs (Steps 15 and 18), `tool_paths` and the discovery and capability patterns (Steps 18 and 19), and the process runner.
+- Step 21: the Vite and web adapter: detect `package.json`, the Vite config and the package manager from the lockfile; list scripts and dependencies; run approved dev-server, lint, type-check, test, build and preview scripts, with dev servers as owned processes that can be stopped and ports detected; never reinstall or change versions on its own. Builds on the approved-commands pipeline (Step 15) and the process runner.
+- Done in Step 20 (kept for reference): the Godot adapter: parse `project.godot` (name, features, version hints) and `export_presets.cfg`; configure the Godot executable and read its real version; launch the editor; run approved headless, test and export commands (verify the current command-line options); collect GDScript context; capture output. Commands come only from discovered configuration, never invented; a live run is tested if Godot is installed, otherwise reported as not run. Builds on the approved-commands pipeline and run logs (Steps 15 and 18), `tool_paths` and the discovery and capability patterns (Steps 18 and 19), and the process runner.
 
 ## Application feature status
 The app has a working shell, a project registry with detection and overrides, read-only project audits, a read-only Git view, backups with restore and export and import, project memory, context packs and session handoffs, tasks and a roadmap, agent roles and workflow plans, provider integrations (Ollama, Claude Code, Codex CLI), an AI Workbench with a routed run queue for read-only agent runs, a writer lock and a local-inference policy, a live dashboard, activity history, settings and an implementation status page. The core (IPC, logging, database, settings, activity, process runner, shutdown) works and is tested. Sections marked Upcoming in the sidebar are not built; the roadmap says which step builds each one.
@@ -53,7 +55,7 @@ The app has a working shell, a project registry with detection and overrides, re
 | Ollama | installed; local API not answering at the Step 1 check (KI-003) |
 | GPU | NVIDIA GeForce RTX 3060, 12288 MiB, driver 610.74 (`nvidia-smi` available) |
 | VS Code | installed |
-| Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked |
+| Not on PATH | GitHub CLI, Codex CLI, Blender, Godot, pnpm, yarn (KI-002, KI-004); Unreal not checked. Godot 4.7.2 (.NET) is installed at `C:\Users\Amos Remahl\Godot\` (found by the app, Step 20) |
 
 ## Live checks of the providers on this PC (2026-10-24)
 - **Ollama (before it was started):** installed at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe`; the app reported "Ollama is installed but not running".
@@ -62,6 +64,16 @@ The app has a working shell, a project registry with detection and overrides, re
 - **Codex CLI:** not installed, reported as "Not installed ... It is optional".
 - **A bug the live check found and fixed:** two pages asking for provider status at the same moment made the second detection run fail with "already has a program running". Checks now join one another and every detection run has its own owner (tests added).
 - **Not proven live:** a real Ollama generation (no models installed), a real Claude Code run and any Codex run (see KI-016).
+
+## Handoff: Step 20
+- **Requested:** a Godot adapter that uses the project's real configuration and the installed engine: parse `project.godot` and `export_presets.cfg`; configure the executable and read its real version; launch the editor; run approved headless, test and export commands (options verified); collect GDScript context; capture output. Fixture parsing tests, commands only from discovered configuration, a live run if Godot is installed.
+- **Changed:** `src/main/engines/godot/` (`cfg.ts`, `project.ts`, `installs.ts`, `commands.ts`, `context.ts`, `service.ts`, `godot.test.ts`), `src/shared/godot.ts`, migration `0015_godot.sql` (`tool_paths` accepts `godot`), six `godot:*` channels, command merging in `src/main/index.ts` (`extra` now also takes `godot.commandsFor`) and `permissions:view` (looks at both engines first), Godot text in context packs, `features/godot/GodotPanel.tsx` under Engines, the dashboard card Godot, manifest card `card.godot`, `COMPLETED_THROUGH_STEP` 20, fixtures `godot-project` and `engines/Godot_4.3`, `engines/Godot_4.4-no-console`, `test/mocks/fake-engines.ts` (Godot handlers), `test/e2e/godot.e2e.ts`; ARCHITECTURE.md section 33, D-045, KI-024, DATA.md schema v15, CHANGELOG and this file.
+- **Verified (2026-11-18):** `npm run typecheck`, `lint`, `test` (1260 passed, 4 skipped: the real-Blender tests, since `GDCC_BLENDER_DIR` was not set), `build`, `check:docs` (14 of 14) and `test:e2e` (53 passed, 1 skipped: the no-Blender variant is skipped only when Blender is found; here the Blender e2e ran its no-Blender variant). The new Godot e2e ran the real app against a "download" made of files that are not programs, so nothing was started: the project was read, only allowed commands were listed, a failed editor start was reported, the approval window showed `--headless --path ... --import`, and the failed run was kept in the log; the fixture project was unchanged.
+- **Live check on this PC (read-only, 2026-11-18):** Godot 4.7.2 (.NET) at `C:\Users\Amos Remahl\Godot\Godot_v4.7.2-stable_mono_win64` was found by the default-folder search. `--version` was run once on each program: the editor program printed `4.7.2.stable.mono.official.ed1daf0bf` through a pipe in 0.4 s, the `_console.exe` wrapper printed `CreateProcess failed, error 193`. Nothing else was started; no project was opened, imported, exported or tested; **a live Godot command or editor run is not proven (KI-024)** by the user's instruction not to start heavy programs.
+- **Unfinished:** nothing in Step 20 except what KI-024 lists (no live import, export, test or editor run; GUT only; no `--check-only`; Godot 3 gets no commands).
+- **Known risks:** command output for a headless run is assumed to reach the pipe as `--version` did; the first real export needs export templates; version matching is strict by design.
+- **Relevant files:** `src/main/engines/godot/service.ts`, `src/main/engines/godot/commands.ts`, `src/main/engines/godot/project.ts`, `src/renderer/src/features/godot/GodotPanel.tsx`.
+- **Next task:** Step 21 · Vite.js integration.
 
 ## Handoff: Step 19
 - **Requested:** a Blender adapter: detect `.blend` files and Blender installs (configured path and common folders, not only PATH), open scenes, run approved scripts through Blender's documented command-line background mode (flags verified) on copies whenever a script could save, track important asset files, asset briefs and naming conventions, record export results and errors, import handoff notes for the target engine; detection tests; a headless run tested if Blender is installed; a test proving originals are never overwritten.

@@ -15,7 +15,7 @@ import type { CommandService, PermissionService, WriteGate } from '../security';
 import type { ChangeService, OverviewService } from '../changes';
 import type { DiagnosticsService } from '../diagnostics';
 import type { SessionService } from '../sessions';
-import type { AssetService, BlenderService, EngineService, ProfileService } from '../engines';
+import type { AssetService, BlenderService, EngineService, GodotService, ProfileService } from '../engines';
 import type { AttentionItem } from '@shared/sessions';
 import type { Retention } from '../logging';
 import { resolveInside } from '../security';
@@ -49,6 +49,7 @@ export interface HandlerServices {
   diagnostics: DiagnosticsService;
   retention: Retention;
   engines: EngineService;
+  godot: GodotService;
   profiles: ProfileService;
   blender: BlenderService;
   assets: AssetService;
@@ -195,6 +196,12 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('engines:open', ({ projectId, target }) => services.engines.open(projectId, target));
   ipc.handle('engines:addPath', () => services.engines.addEnginePath());
   ipc.handle('engines:removePath', ({ index }) => services.engines.removeEnginePath(index));
+  ipc.handle('godot:view', ({ projectId }) => services.godot.view(projectId));
+  ipc.handle('godot:open', ({ projectId, target }) => services.godot.open(projectId, target));
+  ipc.handle('godot:launchEditor', ({ projectId }) => services.godot.launchEditor(projectId));
+  ipc.handle('godot:stopEditor', ({ projectId }) => services.godot.stopEditor(projectId));
+  ipc.handle('godot:addPath', () => services.godot.addPath());
+  ipc.handle('godot:removePath', ({ index }) => services.godot.removePath(index));
   ipc.handle('blender:view', ({ projectId }) => services.blender.view(projectId));
   ipc.handle('blender:addPath', () => services.blender.addPath());
   ipc.handle('blender:removePath', ({ index }) => services.blender.removePath(index));
@@ -214,7 +221,7 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('commands:history', ({ projectId }) => services.commands.history(projectId));
   ipc.handle('commands:log', ({ id }) => services.commands.log(id));
   ipc.handle('permissions:view', async ({ projectId }) => {
-    await services.engines.ensure(); // engine commands depend on the installed engines
+    await Promise.all([services.engines.ensure(), services.godot.ensure()]); // engine commands depend on the installed engines
     const discovered = services.commands.discover(projectId);
     return { grants: services.permissions.grants(projectId), approvals: services.permissions.approvals(projectId), commands: discovered.commands, commandsNote: discovered.note };
   });

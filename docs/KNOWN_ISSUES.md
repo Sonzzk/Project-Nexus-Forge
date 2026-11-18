@@ -134,3 +134,15 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **Tracking compares size and modification time**, not content, so a file rewritten with the same size and time is not noticed.
 - **The real-Blender tests run only where Blender is found** (`GDCC_BLENDER_DIR` or Program Files). Elsewhere they are skipped and reported as skipped, not passed.
 - **Live check scope:** two small real scenes were described on copies; no real script was run against your files, and `Locker2.blend` (190 MB) and the asset-pack files were only scanned (headers), not opened by Blender.
+
+## KI-024 · Godot integration limits (found in Step 20, accepted)
+
+- **No live run is proven.** Godot 4.7.2 (.NET) is installed on this PC, but by choice no project was opened, imported, exported or tested with it and the editor was not started (only `--version` was run). The argument forms follow Godot's and GUT's documentation, and the tests use a fake runner and non-program stand-ins. Treat the first real import, export and test run as unproven.
+- **The `_console.exe` wrapper did not start on this PC** (error 193), so commands run the editor program and rely on its output reaching the pipe, which was seen for `--version` only. If a command prints nothing, its log will be empty.
+- **GUT only.** GdUnit4 and other test runners are not offered. GUT's flags beyond `-gdir`, `-gexit` and the config file are not used.
+- **Exports need templates and an existing folder.** The app does not install export templates and does not create the export folder; a missing template shows up as Godot's own error in the log. Release and debug are both offered for every usable preset.
+- **Godot 3 projects get no commands.** The detection and context still work.
+- **Version matching is strict.** A project saved by 4.3 with only 4.7 installed gets no command and no editor start until a 4.3 folder is added; the app never substitutes another version.
+- **The version string's form is observed, not documented.** If a future Godot prints something else, the version comes from the file name.
+- **GDScript context is names only.** `class_name` and `extends` come from the first 8 KB of each file; an inner class or a `class_name` after line 8 KB is missed. C# classes are not listed.
+- **The editor window is not tracked beyond the process.** If the person closes the editor in Godot, the app notices when the process ends; an editor started outside the app is unknown to it.
