@@ -19,7 +19,7 @@ export function buildCsp({ dev, meta }: CspOptions): string {
     "default-src 'none'",
     dev ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'",
     dev ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' ${styleHashes}`,
-    "img-src 'self' data:",
+    "img-src 'self' data: gdcc-asset:",
     "font-src 'self'",
     dev ? "connect-src 'self' ws://localhost:* http://localhost:*" : "connect-src 'self'",
     "object-src 'none'",

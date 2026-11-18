@@ -7,3 +7,7 @@ export { createPackService, estimateTokens, type PackService } from './packs';
 export { readProjectDoc, writeProjectDoc } from './project-write';
 export { createHandoffService, type HandoffService } from './handoffs';
 export { contextTables } from './export';
+export { createAssetIndex, type AssetIndex } from './asset-index';
+export { createAssetOps, type AssetOps } from './asset-ops';
+export { buildAssetRegister } from './asset-register';
+export { resolvePreview } from './asset-preview';

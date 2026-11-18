@@ -22,6 +22,7 @@ import { createDiagnosticsService } from '../diagnostics';
 import { createAttention, createSessionService } from '../sessions';
 import { createRetention } from '../logging';
 import { createAssetService, createBlenderService, createEngineService, createGodotService, createProfileService, createServerRegistry, createWebService } from '../engines';
+import { createAssetIndex, createAssetOps } from '../scanning';
 import { createMockProvider } from '../../../test/helpers/mock-provider';
 import { createAgentService, createPlanningService, createRunQueue, createTaskService } from '../planning';
 import { availabilityFrom } from '@shared/routing';
@@ -101,6 +102,8 @@ async function setup() {
   const godot = createGodotService({ db, projects, runner: noGit, activity, permissions, confirm: confirmUi, logger, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({}) });
   const engines = createEngineService({ db, projects, runner: noGit, activity, permissions, confirm: confirmUi, logger, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({ SystemRoot: 'C:\\nowhere', ProgramData: 'C:\\nowhere', ProgramFiles: 'C:\\nowhere' }) });
   const assets = createAssetService({ db, projects, activity });
+  const assetIndex = createAssetIndex({ db, projects, activity, tracking: assets, limits: () => ({ maxEntries: 1000, budgetMs: 1000 }) });
+  const assetOps = createAssetOps({ db, projects, permissions, activity, confirm: confirmUi, trashItem: () => Promise.resolve() });
   const blender = createBlenderService({ db, projects, runner: noGit, activity, permissions, assets, confirm: confirmUi, logger, redactor, openPath: () => Promise.resolve(''), pickFolder: () => Promise.resolve(undefined), env: () => ({ ProgramFiles: 'C:\\nowhere' }), workRoot: join(dir, 'blender-work') });
   const queue = createRunQueue({
     db, agents, tasks, projects, activity, logger,
@@ -154,6 +157,9 @@ async function setup() {
     engines,
     godot,
     web,
+    assetIndex,
+    assetOps,
+    assetRegister: () => '',
     profiles: createProfileService({ db, projects, activity }),
     blender,
     assets,

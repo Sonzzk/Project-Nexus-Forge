@@ -16,6 +16,7 @@ import type { ChangeService, OverviewService } from '../changes';
 import type { DiagnosticsService } from '../diagnostics';
 import type { SessionService } from '../sessions';
 import type { AssetService, BlenderService, EngineService, GodotService, ProfileService, WebService } from '../engines';
+import type { AssetIndex, AssetOps } from '../scanning';
 import type { AttentionItem } from '@shared/sessions';
 import type { Retention } from '../logging';
 import { resolveInside } from '../security';
@@ -51,6 +52,10 @@ export interface HandlerServices {
   engines: EngineService;
   godot: GodotService;
   web: WebService;
+  assetIndex: AssetIndex;
+  assetOps: AssetOps;
+  /** The text of ASSET_REGISTER.md built from the index and the person's notes. */
+  assetRegister: (projectId: string) => string;
   profiles: ProfileService;
   blender: BlenderService;
   assets: AssetService;
@@ -222,6 +227,17 @@ export function registerHandlers(ipc: Ipc, services: HandlerServices): void {
   ipc.handle('briefs:list', ({ projectId }) => services.assets.briefs(projectId));
   ipc.handle('briefs:save', (input) => services.assets.saveBrief(input));
   ipc.handle('briefs:remove', ({ id }) => services.assets.removeBrief(id));
+  ipc.handle('assets:tracked', ({ projectId }) => services.assets.list(projectId));
+  ipc.handle('assets:scan', ({ projectId }) => services.assetIndex.scan(projectId));
+  ipc.handle('assets:search', (request) => services.assetIndex.search(request));
+  ipc.handle('assets:annotate', (request) => services.assetIndex.annotate(request));
+  ipc.handle('assets:checks', ({ projectId }) => services.assetIndex.checks(projectId));
+  ipc.handle('assets:register', ({ projectId }) => ({ content: services.assetRegister(projectId) }));
+  ipc.handle('assets:previewMove', ({ projectId, moves }) => services.assetOps.previewMove(projectId, moves));
+  ipc.handle('assets:move', ({ projectId, moves }) => services.assetOps.move(projectId, moves));
+  ipc.handle('assets:previewTrash', ({ projectId, relativePaths }) => services.assetOps.previewTrash(projectId, relativePaths));
+  ipc.handle('assets:trash', ({ projectId, relativePaths }) => services.assetOps.trash(projectId, relativePaths));
+  ipc.handle('briefs:document', ({ id }) => services.assets.document(id));
   ipc.handle('briefs:handoff', ({ id }) => services.assets.handoff(id));
   ipc.handle('commands:history', ({ projectId }) => services.commands.history(projectId));
   ipc.handle('commands:log', ({ id }) => services.commands.log(id));

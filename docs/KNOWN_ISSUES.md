@@ -157,3 +157,17 @@ The log records only what this app sent. Work done by running Claude Code or Cod
 - **Output is a tail.** The page shows the last 6,000 characters of a server's redacted output, refreshed when the page reloads or an activity event arrives, not live.
 - **Dependencies are listed, not audited.** Installed versions come from each package's own `package.json`; no vulnerability, license or outdated check is made, and workspaces (monorepos with several `package.json` files) are not followed: only the top-level `package.json` is read.
 - **The install command deletes `node_modules` (npm) and runs install scripts.** It is approved like any command, and nothing checks the package registry's reachability or the lockfile's integrity beyond what the package manager does.
+
+## KI-026 · Asset management limits (found in Step 22, accepted)
+
+- **Changes are found by size and time, not content.** A file rewritten with the same size and the same modification time is not noticed by a rescan or by "changed since".
+- **Categories come from the extension.** A `.png` that is really something else, an engine asset without a known extension, and any file type not in the list are not indexed. `.uasset` and similar are shown as engine assets by name only, so their kind (mesh, texture, blueprint) is unknown and their Unreal prefix cannot be checked. A `.zip` or `.exe` counts as an exported build only inside a folder named like a build folder (`build`, `builds`, `dist`, `export`, `release`, `packaged`...).
+- **Scans have limits.** At 200,000 entries or 10 seconds (settings `assets.maxEntries`, `assets.timeBudgetSeconds`; their controls arrive with the settings page) the scan stops, the index is partial and nothing is removed from it. Depth 14.
+- **Annotated files that disappeared are not in the search.** The search lists indexed files; a tracked file that was deleted shows in the Briefs tab's tracked list as missing, not in the Inventory.
+- **Moves do not update references.** Scenes, materials, prefabs, scripts and engine metadata (`.meta`, `.import`) that name the old path are left alone; the preview says so. Moving a folder, or a whole collection beyond 200 files, is not offered.
+- **A failed move is put back on a best-effort basis.** If a file cannot be put back, the message says the move stopped; check the folder.
+- **Removal depends on Windows.** Files the Recycle Bin cannot hold (very large files, network drives) are refused by Windows and stay where they are.
+- **Previews are small images only.** PNG, JPEG, GIF, WebP and BMP up to 8 MB. DDS, TGA, EXR, PSD, SVG and engine textures show details only. Animated GIFs animate in the browser; nothing is decoded by the app.
+- **Reimport is not built.** It needs the engine's own tools (Steps 18, 20), and a generic reimport command would be invented.
+- **The register has no history.** Each build replaces the stored document after the preview; earlier versions live in the project's Git history only when the register was saved into the project.
+- **Live check scope:** the real app indexed and previewed a fixture copy only; the person's real asset folders were not scanned in this step.

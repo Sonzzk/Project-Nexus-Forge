@@ -33,6 +33,8 @@ export interface AssetService {
   removeBrief(id: string): { removed: true };
   /** Markdown notes for importing an asset into an engine, built from the brief, the tracked file and the last inspect of it. */
   handoff(briefId: string): { text: string; basedOnInspect: string | null };
+  /** The brief itself as a Markdown document to give to whoever makes the asset: what is needed, never a claim that the app makes it. */
+  document(briefId: string): { text: string; missing: string[] };
 }
 
 interface AssetRow {
@@ -148,6 +150,37 @@ export function createAssetService(options: { db: Db; projects: ProjectRegistry;
       return { removed: true };
     },
 
+    document(briefId) {
+      const row = db.get<BriefRow>('SELECT * FROM asset_briefs WHERE id = ?', briefId);
+      if (row === undefined) throw new AppError('NOT_FOUND', 'That brief does not exist.');
+      const brief = briefFrom(row);
+      const task = brief.taskId === null ? undefined : db.get<{ title: string }>('SELECT title FROM tasks WHERE id = ?', brief.taskId);
+      const missing: string[] = [];
+      const section = (title: string, text: string, ask: string): string[] => {
+        if (text.trim() === '') {
+          missing.push(title);
+          return [`## ${title}`, `Not specified yet. ${ask}`, ''];
+        }
+        return [`## ${title}`, text.trim(), ''];
+      };
+      const lines = [
+        `# Asset brief: ${brief.name}`,
+        '',
+        `Asset type: ${brief.assetType.replace('-', ' ')}. Target engine: ${brief.engine}. Suggested file name: \`${suggestName(brief.engine, brief.assetType, brief.name)}\``,
+        task === undefined ? '' : `Needed for the task: ${task.title}`,
+        '',
+        ...section('Purpose and use', brief.purpose, 'Say where the asset appears in the game and what it must do there.'),
+        ...section('Scale', brief.scale, 'Give real-world size or engine units, and the unit system the engine uses.'),
+        ...section('File formats', brief.formats, 'Name the format to deliver and what the engine imports.'),
+        ...section('Textures and materials', brief.textures, 'Give resolutions, channels (base colour, normal, roughness...) and how many materials.'),
+        ...section('Performance limits', brief.performance, 'Give a triangle budget, a texture memory limit and draw-call limits if they matter. Do not guess numbers: take them from the game.'),
+        ...section('Engine integration', brief.integration, 'Say which folder it goes in, collision, LODs, naming and anything the engine must be set up for.'),
+      ];
+      if (brief.notes.trim() !== '') lines.push('## Notes', brief.notes.trim(), '');
+      lines.push('---', missing.length === 0 ? 'Every section is filled in.' : `Still to decide before this is handed to anyone: ${missing.join(', ')}.`, 'This is a written requirement. This app does not generate models or textures; a real tool or a person makes the asset.');
+      return { text: lines.filter((l, i, all) => !(l === '' && all[i - 1] === '')).join('\n'), missing };
+    },
+
     handoff(briefId) {
       const row = db.get<BriefRow>('SELECT * FROM asset_briefs WHERE id = ?', briefId);
       if (row === undefined) throw new AppError('NOT_FOUND', 'That brief does not exist.');
@@ -243,5 +276,25 @@ export const assetTables: ExportableTable[] = [
       { column: 'asset_id', table: 'tracked_assets', parentColumn: 'id' },
     ],
     orderBy: 'created_at, id',
+  },
+  // Source and usage notes and task links of tracked assets (Step 22). They point at tracked assets and tasks, which are registered before them.
+  {
+    id: 'asset_details',
+    label: 'Asset sources and usage',
+    schema: z.strictObject({ asset_id: id, source: z.string().max(300), usage: z.string().max(500) }),
+    key: ['asset_id'],
+    parents: [{ column: 'asset_id', table: 'tracked_assets', parentColumn: 'id' }],
+    orderBy: 'asset_id',
+  },
+  {
+    id: 'asset_task_refs',
+    label: 'Asset task links',
+    schema: z.strictObject({ asset_id: id, task_id: id }),
+    key: ['asset_id', 'task_id'],
+    parents: [
+      { column: 'asset_id', table: 'tracked_assets', parentColumn: 'id' },
+      { column: 'task_id', table: 'tasks', parentColumn: 'id' },
+    ],
+    orderBy: 'asset_id, task_id',
   },
 ];

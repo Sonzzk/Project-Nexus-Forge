@@ -419,19 +419,22 @@ function AssetsCard() {
   const { selected } = useProjects();
   const { go } = useNav();
   const view = useJson(selected?.id, (id) => window.api.invoke('blender:view', { projectId: id }));
+  const index = useJson(selected?.id, (id) => window.api.invoke('assets:search', { projectId: id, query: '', category: null, tag: '', taskId: null, annotatedOnly: false, limit: 1, offset: 0 }));
   const last = view?.runs[0];
   const attention = view?.assets.filter((a) => a.status !== 'unchanged').length ?? 0;
   return (
     <section className="card" aria-label="Assets and Blender" data-feature="card.assets">
       <div className="card__head">
         <h2>Assets and Blender</h2>
-        <button type="button" className="btn" onClick={() => go('integrations')}>
+        <button type="button" className="btn" onClick={() => go('assets')}>
           Open
         </button>
       </div>
       {selected === undefined && <p className="empty">Select a project to see its assets.</p>}
       {view !== undefined && (
         <dl className="facts">
+          <dt>Asset index</dt>
+          <dd>{index === undefined || index.scan === null ? 'Not scanned yet' : `${index.scan.files.toLocaleString('en-US')} files${index.scan.truncated ? ' (partial)' : ''}`}</dd>
           <dt>Blender</dt>
           <dd>{view.installs[0]?.version === undefined ? 'Not found' : `Blender ${view.installs[0].version ?? 'unknown version'}`}</dd>
           <dt>Scenes</dt>

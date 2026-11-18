@@ -14,7 +14,7 @@ This document describes the data the app keeps about itself (spec §22). It neve
 | `backups\gdcc-<UTC time>-<reason>.db` | Backups. Reasons: `manual`, `scheduled`, `pre-migration`, `pre-restore`, `pre-import`. Each is one self-contained, integrity-checked file. |
 | `logs\main.log` | Rotated, redacted log. |
 
-## Schema (version 15)
+## Schema (version 16)
 
 All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-only, numbered, checksummed and never edited after they ship.
 
@@ -57,6 +57,10 @@ All tables are `STRICT`. Times are ISO-8601 UTC text. Migrations are forward-onl
 | `approved_scripts` | 14 | project (cascade), script path, hash of its text, time approved, time taken back | A Blender script you approved; a changed script is not run. Not exported, so a file cannot approve a script. |
 | `blender_runs` | 14 | project (cascade), kind (inspect or script), source scene and script, Blender folder and version, times, status, exit code, outcome, whether the original was left unchanged, the run folder, output files, the scene description, the redacted log, the error summary | Every headless run. Deleted with its folder after `retention.processRunDays`. Not exported. |
 | `tracked_assets` | 14 | project (cascade), project-relative path, kind, note, tags, size and modification time when tracked, time | Files you track. **Exported.** |
+| `asset_index` | 16 | project (cascade), project-relative path, category, extension, size, modification time, scan time | The metadata-only list of game content, rebuilt by scanning (no file content). Not exported. |
+| `asset_scans` | 16 | project (cascade), time, entries looked at, files, added, changed, removed, unchanged, whether it stopped at a limit, duration | The last scan of each project. Not exported. |
+| `asset_details` | 16 | tracked asset (cascade), source or owner, where it is used | Your notes on a tracked asset. **Exported.** |
+| `asset_task_refs` | 16 | tracked asset and task (both cascade) | The tasks that need an asset. **Exported.** |
 | `asset_briefs` | 14 | project (cascade), name, type, target engine, the requirement fields, optional task and tracked file, times | Asset briefs. **Exported.** |
 
 History is trimmed by the retention limits (Settings keys `retention.*`; see ARCHITECTURE.md section 30): `activity_events`, finished `process_runs`, `command_runs`, `blender_runs` (with their run folders), `run_sessions` and `usage_log` rows older than their limit, and rotated log files beyond the count.

@@ -18,6 +18,7 @@ import { AttentionItemSchema, SessionSchema, SessionSummarySchema } from '../ses
 import { ProfilePatchSchema, ProfileViewSchema } from '../backrooms';
 import { GODOT_OPEN_TARGETS, GodotViewSchema } from '../godot';
 import { WebViewSchema } from '../web';
+import { AnnotateRequestSchema, AssetItemSchema, AssetSearchRequestSchema, AssetSearchResultSchema, CheckReportSchema, MAX_MOVES, MoveSchema, OpsPreviewSchema, OpsResultSchema, ScanSummarySchema } from '../assets';
 import { OPEN_TARGETS, UnrealViewSchema } from '../unreal';
 import { BlenderRunDetailSchema, BlenderViewSchema, BriefFieldsSchema, BriefSchema, TrackedAssetSchema } from '../blender';
 import { ActivityExportRequestSchema, ActivityQuerySchema, FileExportResultSchema, LogsRequestSchema, LogsResultSchema } from '../diagnostics';
@@ -286,6 +287,19 @@ export const contract = {
   'briefs:list': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(BriefSchema) },
   'briefs:save': { request: z.strictObject({ projectId: z.string().max(64), id: z.string().max(64).optional(), fields: BriefFieldsSchema }), response: BriefSchema },
   'briefs:remove': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ removed: z.literal(true) }) },
+  // The asset inventory (Step 22). The page names a project and project-relative paths taken from what main listed; main resolves them
+  // inside the project, shows a preview, asks for the project-writes permission and a confirmation, and never overwrites a file.
+  'assets:tracked': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.array(TrackedAssetSchema).max(2000) },
+  'assets:scan': { request: z.strictObject({ projectId: z.string().max(64) }), response: ScanSummarySchema },
+  'assets:search': { request: AssetSearchRequestSchema, response: AssetSearchResultSchema },
+  'assets:annotate': { request: AnnotateRequestSchema, response: AssetItemSchema },
+  'assets:checks': { request: z.strictObject({ projectId: z.string().max(64) }), response: CheckReportSchema },
+  'assets:register': { request: z.strictObject({ projectId: z.string().max(64) }), response: z.strictObject({ content: z.string().max(200_000) }) },
+  'assets:previewMove': { request: z.strictObject({ projectId: z.string().max(64), moves: z.array(MoveSchema).min(1).max(MAX_MOVES) }), response: OpsPreviewSchema },
+  'assets:move': { request: z.strictObject({ projectId: z.string().max(64), moves: z.array(MoveSchema).min(1).max(MAX_MOVES) }), response: OpsResultSchema },
+  'assets:previewTrash': { request: z.strictObject({ projectId: z.string().max(64), relativePaths: z.array(z.string().min(1).max(400)).min(1).max(MAX_MOVES) }), response: OpsPreviewSchema },
+  'assets:trash': { request: z.strictObject({ projectId: z.string().max(64), relativePaths: z.array(z.string().min(1).max(400)).min(1).max(MAX_MOVES) }), response: OpsResultSchema },
+  'briefs:document': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ text: z.string().max(20_000), missing: z.array(z.string().max(60)).max(10) }) },
   'briefs:handoff': { request: z.strictObject({ id: z.string().max(64) }), response: z.strictObject({ text: z.string().max(20_000), basedOnInspect: z.string().max(64).nullable() }) },
   'commands:history': {
     request: z.strictObject({ projectId: z.string().max(64) }),

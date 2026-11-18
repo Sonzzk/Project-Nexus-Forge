@@ -7,6 +7,17 @@ Meaningful changes, newest first. Each step is tagged `step-NN` in Git.
 ### Added
 - `assets/icon/nexus-ai.png` and multi-size `nexus-ai.ico`: the Nexus AI app icon, used as the window icon since Step 3 (Step 27 uses it for the installer).
 
+## Step 22 · Asset management (2026-11-18, tag `step-22`)
+
+### Added
+- The Assets section: a metadata-only index of the project's game content (models, textures, materials, audio, animations, scenes, scripts, fonts, videos, exported builds and engine assets) with incremental rescans, a limit on size and time that says when the list is partial, and search over paths, notes, tags, sources and usage with category, tag, task and "my notes" filters.
+- Notes on a file: tags, a note, where it came from, where it is used and the tasks that need it. They are kept with the file when it is rescanned or moved, and are exported.
+- Previews of common images (PNG, JPEG, GIF, WebP, BMP) through a protocol that serves only images inside registered projects; engine formats show details only.
+- Naming and folder checks that only report (Unreal prefixes, Godot snake_case, Unity, generic), each with a name that would fit.
+- `ASSET_REGISTER.md` built from your notes and the index, previewed and saved through project memory, and a brief document that lists what is still undecided.
+- Moving, renaming and removing a file only after a preview, the project-writes permission and a confirmation; moves never overwrite, never change the file type and are undone if a step fails; removal goes to the Recycle Bin.
+- Schema v16 (`asset_index`, `asset_scans`, `asset_details`, `asset_task_refs`), settings `assets.maxEntries` and `assets.timeBudgetSeconds`, 11 channels. Decision D-047, known issue KI-026.
+
 ## Step 21 · Vite.js integration (2026-11-18, tag `step-21`)
 
 ### Added

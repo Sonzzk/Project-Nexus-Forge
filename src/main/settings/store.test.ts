@@ -28,6 +28,8 @@ describe('settings schema', () => {
       'projects.selectedId': null,
       'audit.maxFiles': 20_000,
       'audit.timeBudgetSeconds': 8,
+      'assets.maxEntries': 200_000,
+      'assets.timeBudgetSeconds': 10,
       'backup.scheduleEnabled': false,
       'backup.intervalHours': 24,
       'backup.keepCount': 10,

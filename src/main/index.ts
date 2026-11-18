@@ -5,7 +5,7 @@ import { AppError } from '@shared/errors';
 import type { AppInfo } from '@shared/ipc/contract';
 import { installCrashHandlers } from './app/crash';
 import { isAllowedUrl } from './app/navigation';
-import { registerAppScheme, rendererRootFor, serveRenderer } from './app/protocol';
+import { registerAppScheme, rendererRootFor, serveRenderer, servePreviews } from './app/protocol';
 import { isRecoverable, runStartupRecovery } from './app/recovery';
 import { createShutdownCoordinator } from './app/shutdown';
 import { createMainWindow, installSecurityGuards, rendererDevServerUrl } from './app/window';
@@ -27,7 +27,7 @@ import { assetTables, createAssetService, createBlenderService, createEngineServ
 import { createAttention, createSessionService } from './sessions';
 import { evaluateLocal, type ResourceReport } from '@shared/resources';
 import { availabilityFrom } from '@shared/routing';
-import { contextTables, createAuditService, createHandoffService, createMemoryService, createPackService } from './scanning';
+import { buildAssetRegister, contextTables, createAssetIndex, createAssetOps, createAuditService, createHandoffService, createMemoryService, createPackService, resolvePreview } from './scanning';
 import { createSettingsStore, settingsTable, type SettingsStore } from './settings';
 import {
   applyPendingRestore,
@@ -394,6 +394,14 @@ async function startServices(): Promise<void> {
     env: () => process.env,
     workRoot: join(userDataDir, 'blender-work'),
   });
+  const assetIndex = createAssetIndex({
+    db,
+    projects,
+    activity,
+    tracking: assets,
+    limits: () => ({ maxEntries: settingsStore.get('assets.maxEntries'), budgetMs: settingsStore.get('assets.timeBudgetSeconds') * 1000 }),
+  });
+  const assetOps = createAssetOps({ db, projects, permissions, activity, confirm: (options) => ui.confirm(options), trashItem: (fullPath) => shell.trashItem(fullPath) });
   const commands = createCommandService({
     extra: (projectId) => [...engines.commandsFor(projectId), ...godot.commandsFor(projectId), ...webCommandsFor(projects.get(projectId)?.rootPath ?? '')],
     packageManager: packageManagerOf,
@@ -408,6 +416,11 @@ async function startServices(): Promise<void> {
     timeoutMs: () => settingsStore.get('safety.commandTimeoutSeconds') * 1000,
   });
 
+  // Image previews for the asset inventory: only an image inside a registered project can be reached (spec §17).
+  servePreviews((url) => {
+    const target = resolvePreview(url, projects);
+    return target.ok ? { ok: true, fullPath: target.fullPath, mime: target.mime } : { ok: false };
+  });
   const web = createWebService({
     projects,
     commands,
@@ -528,6 +541,9 @@ async function startServices(): Promise<void> {
     engines,
     godot,
     web,
+    assetIndex,
+    assetOps,
+    assetRegister: (projectId) => buildAssetRegister(db, { id: projectId, name: projects.get(projectId)?.name ?? 'Project' }, new Date().toISOString().slice(0, 10)),
     profiles,
     blender,
     assets,

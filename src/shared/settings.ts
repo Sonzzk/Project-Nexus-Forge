@@ -20,6 +20,9 @@ export const SettingsSchema = z.object({
   /** Audit limits (spec §7): the scanner stops at either and the report says so. */
   'audit.maxFiles': z.number().int().min(1000).max(200_000).default(20_000),
   'audit.timeBudgetSeconds': z.number().int().min(1).max(120).default(8),
+  /** Asset index limits (spec §17): a scan stops at either and the page says the index is partial. */
+  'assets.maxEntries': z.number().int().min(1000).max(1_000_000).default(200_000),
+  'assets.timeBudgetSeconds': z.number().int().min(1).max(120).default(10),
   /** AI providers (spec §9). The Ollama address is loopback unless remote use is allowed on purpose. */
   'providers.ollamaEndpoint': z.string().min(1).max(200).default('http://127.0.0.1:11434'),
   'providers.ollamaAllowRemote': z.boolean().default(false),

@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { net, protocol } from 'electron';
+import { PREVIEW_SCHEME } from '@shared/assets';
 import { buildCsp } from '@shared/csp';
 import { APP_HOST, APP_SCHEME } from './navigation';
 import { resolveRendererPath } from './renderer-path';
@@ -9,6 +11,7 @@ import { resolveRendererPath } from './renderer-path';
 export function registerAppScheme(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true } },
   ]);
 }
 
@@ -35,4 +38,26 @@ export function serveRenderer(rendererRoot: string): void {
 
 export function rendererRootFor(mainDir: string): string {
   return join(mainDir, '../renderer');
+}
+
+/** What a preview request may reach: an image inside a registered project (`resolve` decides), and nothing else. */
+export interface PreviewResolver {
+  (requestUrl: string): { ok: true; fullPath: string; mime: string } | { ok: false };
+}
+
+/** Serves `gdcc-asset://preview/...` images (spec §17). Every refusal is the same plain 404, so a request learns nothing about other paths. */
+export function servePreviews(resolve: PreviewResolver): void {
+  protocol.handle(PREVIEW_SCHEME, async (request) => {
+    const target = resolve(request.url);
+    if (!target.ok) return new Response('Not found', { status: 404 });
+    try {
+      const body = await readFile(target.fullPath);
+      return new Response(new Uint8Array(body), {
+        status: 200,
+        headers: { 'Content-Type': target.mime, 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'no-store' },
+      });
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+  });
 }

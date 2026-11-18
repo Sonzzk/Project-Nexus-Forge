@@ -55,7 +55,7 @@ export const FEATURES: readonly FeatureStatus[] = [
   nav('context', 'Project Context', 'available', 9, 'Project memory, context packs and session handoffs.'),
   nav('git', 'Git and Changes', 'available', 7, 'Status, branches and recent commits, agent changes with diffs to commit, reject or revert, checkpoints and working trees.'),
   nav('testing', 'Testing', 'upcoming', 23),
-  nav('assets', 'Assets', 'upcoming', 22),
+  nav('assets', 'Assets', 'available', 22, 'A searchable list of the project\'s game content with previews of common images, your notes, tags and task links, naming and folder checks that only report, an asset register, briefs, and moves only after a preview and your confirmation.'),
   nav('integrations', 'Integrations', 'available', 12, 'Ollama, Claude Code and Codex CLI as detected now, with the usage log and launch limits; Unreal Engine installs and projects, Blender scenes and headless runs on copies, Godot projects, export presets and approved commands, web projects with Vite scripts and servers this app owns, asset briefs, and the optional Backrooms profile.'),
   nav(
     'activity',
@@ -187,7 +187,7 @@ export const FEATURES: readonly FeatureStatus[] = [
     section: 'integrations',
     state: 'available',
     step: 19,
-    note: 'Blender install, scenes, tracked asset files and the last headless run; read from files and the app records.',
+    note: 'The asset index, Blender install and scenes, tracked asset files and the last headless run; read from files and the app records.',
   },
   {
     id: 'card.godot',

@@ -14,6 +14,7 @@ import type { Review } from '@shared/changes';
 import { attachSessions, sampleSession as sampleRunSession, type FakeSessions } from '../../../../test/mocks/fake-sessions';
 import { attachChanges, emptyOverview, sampleSession, type FakeChanges } from '../../../../test/mocks/fake-changes';
 import { attachPlanning, sampleTask, type FakePlanning } from '../../../../test/mocks/fake-planning';
+import { attachAssets, sampleChecks, type FakeAssets } from '../../../../test/mocks/fake-assets';
 import { attachBlender, attachEngines, attachGodot, attachWeb, sampleBlenderView, sampleGodotView, sampleUnrealView, sampleWebView, type FakeBlender, type FakeEngines, type FakeGodot, type FakeWeb } from '../../../../test/mocks/fake-engines';
 import { App } from '../App';
 import { createActionHandlers } from './actions';
@@ -1252,6 +1253,136 @@ describe('the AI Workbench', () => {
     expect(within(now).getByText(/NVIDIA GeForce RTX 3060: 8\.2 GB VRAM free of 12\.0 GB/)).toBeTruthy();
     await user.click(within(now).getByRole('button', { name: 'Unload qwen3:8b' }));
     expect(fake.calls.find((c) => c.channel === 'providers:unload')?.input).toEqual({ model: 'qwen3:8b' });
+  });
+});
+
+describe('assets', () => {
+  let assets: FakeAssets;
+  const openAssets = async (seed: Parameters<typeof attachAssets>[1] = {}) => {
+    const user = await setup({ projects: [sampleProject(1, { name: 'Alpha' })], settings: { 'projects.selectedId': 'project-1' } });
+    attachPlanning(fake, { tasks: [sampleTask(1)] });
+    assets = attachAssets(fake, seed);
+    await user.click(within(sidebar()).getByRole('button', { name: /^Assets/ }));
+    await screen.findByRole('heading', { name: 'Assets' });
+    return user;
+  };
+
+  it('lists the assets with a preview only for images, filters by category and search, and says what each is', async () => {
+    const user = await openAssets();
+    const list = await screen.findByRole('list', { name: 'Assets' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    const preview = within(list).getByAltText('Preview of art/rock.png');
+    expect(preview.getAttribute('src')).toBe('gdcc-asset://preview/project-1?p=art%2Frock.png'); // an address main checks, never a file path
+    expect(within(list).queryByAltText('Preview of art/crate.fbx')).toBeNull();
+    expect(screen.getByLabelText('Last scan').textContent).toContain('3 asset files');
+    await user.selectOptions(screen.getByLabelText('Category'), 'model');
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Assets' })).getAllByRole('listitem')).toHaveLength(1));
+    await user.selectOptions(screen.getByLabelText('Category'), '');
+    await user.type(screen.getByLabelText('Search'), 'hero');
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Assets' })).getAllByRole('listitem')).toHaveLength(1));
+    expect(fake.calls.filter((c) => c.channel === 'assets:search').at(-1)?.input).toMatchObject({ projectId: 'project-1', query: 'hero', category: null });
+  });
+
+  it('says plainly when the project was not scanned, and scans on request', async () => {
+    const user = await openAssets({ scanned: false });
+    expect(await screen.findByText(/has not been scanned yet/)).toBeTruthy();
+    expect(screen.getByText('Nothing is listed until the project has been scanned.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Scan the project' }));
+    expect(await screen.findByLabelText('Last scan')).toBeTruthy();
+    expect(fake.calls.some((c) => c.channel === 'assets:scan' && (c.input as { projectId: string }).projectId === 'project-1')).toBe(true);
+  });
+
+  it('keeps your notes, tags, source, usage and task links on a file, and offers no preview for an engine format', async () => {
+    const user = await openAssets();
+    await user.click(await screen.findByRole('button', { name: 'Details of data/hero.uasset' }));
+    const detail = await screen.findByRole('region', { name: 'Details of data/hero.uasset' });
+    expect(within(detail).getByText(/only the engine can open/)).toBeTruthy();
+    expect(within(detail).queryByRole('img')).toBeNull();
+    await user.type(within(detail).getByLabelText('Note'), 'Hero mesh');
+    await user.type(within(detail).getByLabelText('Tags (separated by commas)'), 'hero, prop');
+    await user.type(within(detail).getByLabelText('Source or owner'), 'Made in-house');
+    await user.click(await within(detail).findByRole('checkbox', { name: /Task 1|Add jumping|task/i }));
+    await user.click(within(detail).getByRole('button', { name: 'Save my notes' }));
+    expect(await within(detail).findByText('Your notes were saved.')).toBeTruthy();
+    expect(fake.calls.find((c) => c.channel === 'assets:annotate')?.input).toMatchObject({ projectId: 'project-1', relativePath: 'data/hero.uasset', note: 'Hero mesh', tags: ['hero', 'prop'], source: 'Made in-house', taskIds: ['task-1'] });
+    const row = within(await screen.findByRole('list', { name: 'Assets' })).getByText('data/hero.uasset').closest('li');
+    expect(row?.textContent).toContain('my notes');
+  });
+
+  it('previews a move with its problems before anything happens, then moves only after the confirmation', async () => {
+    const user = await openAssets();
+    await user.click(await screen.findByRole('button', { name: 'Details of art/rock.png' }));
+    const detail = await screen.findByRole('region', { name: 'Details of art/rock.png' });
+    const target = within(detail).getByLabelText('New path in the project');
+    await user.clear(target);
+    await user.type(target, 'art/crate.fbx');
+    await user.click(within(detail).getByRole('button', { name: 'Preview the move' }));
+    const blocked = await within(detail).findByLabelText('Preview of the change');
+    expect(within(blocked).getByRole('alert').textContent).toContain('never overwrites a file');
+    expect(within(blocked).getByRole('button', { name: 'Move it…' }).hasAttribute('disabled')).toBe(true);
+    expect(assets.moved).toEqual([]);
+    await user.clear(target);
+    await user.type(target, 'art/stone/rock.png');
+    await user.click(within(detail).getByRole('button', { name: 'Preview the move' }));
+    const ok = await within(detail).findByLabelText('Preview of the change');
+    expect(within(ok).getByText('art/rock.png -> art/stone/rock.png')).toBeTruthy();
+    expect(within(ok).getByText(/not updated by this app/)).toBeTruthy();
+    expect(within(ok).getByText(/asked to allow changes to this project first/)).toBeTruthy();
+    expect(assets.moved).toEqual([]); // the preview moved nothing
+    await user.click(within(ok).getByRole('button', { name: 'Move it…' }));
+    expect(await screen.findByText('art/rock.png was moved to art/stone/rock.png.')).toBeTruthy();
+    expect(assets.moved).toEqual([{ from: 'art/rock.png', to: 'art/stone/rock.png' }]);
+    expect(fake.calls.find((c) => c.channel === 'assets:move')?.input).toEqual({ projectId: 'project-1', moves: [{ from: 'art/rock.png', to: 'art/stone/rock.png' }] }); // relative paths only
+  });
+
+  it('removes a file to the Recycle Bin only after a preview, and says when a window was declined', async () => {
+    const user = await openAssets({ agree: false });
+    await user.click(await screen.findByRole('button', { name: 'Details of art/rock.png' }));
+    const detail = await screen.findByRole('region', { name: 'Details of art/rock.png' });
+    await user.click(within(detail).getByRole('button', { name: 'Preview removal (Recycle Bin)' }));
+    const preview = await within(detail).findByLabelText('Preview of the change');
+    expect(within(preview).getByText('art/rock.png goes to the Recycle Bin')).toBeTruthy();
+    await user.click(within(preview).getByRole('button', { name: 'Move it to the Recycle Bin…' }));
+    expect(await within(detail).findByText('Nothing changed: a window was declined.')).toBeTruthy();
+    expect(assets.trashed).toEqual([]);
+    assets.agree = true;
+    await user.click(within(detail).getByRole('button', { name: 'Preview removal (Recycle Bin)' }));
+    await user.click(within(await within(detail).findByLabelText('Preview of the change')).getByRole('button', { name: 'Move it to the Recycle Bin…' }));
+    expect(await screen.findByText('art/rock.png is in the Recycle Bin.')).toBeTruthy();
+    expect(assets.trashed).toEqual(['art/rock.png']);
+  });
+
+  it('shows the naming and folder findings with a name that would fit, and says it only reports', async () => {
+    const user = await openAssets({ checks: sampleChecks() });
+    await user.click(screen.getByRole('tab', { name: 'Naming and folders' }));
+    await user.click(await screen.findByRole('button', { name: 'Run the checks' }));
+    const table = await screen.findByRole('table', { name: 'Findings' });
+    expect(within(table).getByText('art/My Rock.png')).toBeTruthy();
+    expect(within(table).getByText('art/my_rock.png')).toBeTruthy();
+    expect(screen.getByText(/nothing is renamed or moved/)).toBeTruthy();
+    expect(screen.getByText(/1 finding\./)).toBeTruthy();
+  });
+
+  it('builds the asset register, previews what would be saved, and saves it only when you press the button', async () => {
+    const user = await openAssets();
+    await user.click(screen.getByRole('tab', { name: 'Asset register' }));
+    await user.click(await screen.findByRole('button', { name: 'Build the register' }));
+    expect((await screen.findByLabelText<HTMLTextAreaElement>('Register text')).value).toContain('# Asset register: Alpha');
+    expect(assets.saved).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Preview what would be saved' }));
+    const preview = await screen.findByLabelText('Register preview');
+    expect(within(preview).getByText(/A new document would be created at App database/)).toBeTruthy();
+    expect(assets.saved).toEqual([]); // a preview saves nothing
+    expect(fake.calls.find((c) => c.channel === 'memory:preview')?.input).toMatchObject({ projectId: 'project-1', docType: 'ASSET_REGISTER' });
+    await user.click(within(preview).getByRole('button', { name: 'Save the register…' }));
+    expect(await screen.findByText('Saved to App database.')).toBeTruthy();
+    expect(assets.saved).toHaveLength(1);
+  });
+
+  it('asks for a project first', async () => {
+    const user = await setup();
+    await user.click(within(sidebar()).getByRole('button', { name: /^Assets/ }));
+    expect(await screen.findByText('Select a project to see its assets.')).toBeTruthy();
   });
 });
 

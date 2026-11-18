@@ -15,6 +15,7 @@ export function AssetsPanel({ projectId, assets, onChanged }: { projectId: strin
   const [draft, setDraft] = useState<BriefFields>(EMPTY);
   const [editing, setEditing] = useState<string | undefined>();
   const [handoff, setHandoff] = useState<{ title: string; text: string; basedOnInspect: boolean } | undefined>();
+  const [document, setDocument] = useState<{ title: string; text: string; missing: string[] } | undefined>();
   const [problem, setProblem] = useState<SerializedError | undefined>();
   const [version, setVersion] = useState(0);
 
@@ -151,6 +152,9 @@ export function AssetsPanel({ projectId, assets, onChanged }: { projectId: strin
                   }}>
                   Edit
                 </button>
+                <button type="button" className="btn" aria-label={`Write the brief document for ${b.name}`} onClick={() => void window.api.invoke('briefs:document', { id: b.id }).then((r) => r.ok && setDocument({ title: b.name, text: r.value.text, missing: r.value.missing }))}>
+                  Brief document
+                </button>
                 <button type="button" className="btn" aria-label={`Write import notes for ${b.name}`} onClick={() => void window.api.invoke('briefs:handoff', { id: b.id }).then((r) => r.ok && setHandoff({ title: b.name, text: r.value.text, basedOnInspect: r.value.basedOnInspect !== null }))}>
                   Import notes
                 </button>
@@ -161,6 +165,21 @@ export function AssetsPanel({ projectId, assets, onChanged }: { projectId: strin
             </li>
           ))}
         </ul>
+      )}
+      {document !== undefined && (
+        <div aria-label="Brief document">
+          <h5>Brief: {document.title}</h5>
+          <textarea readOnly rows={14} value={document.text} aria-label="Brief text" />
+          <div className="actions">
+            <button type="button" className="btn" onClick={() => void navigator.clipboard.writeText(document.text)}>
+              Copy
+            </button>
+            <button type="button" className="btn" onClick={() => setDocument(undefined)}>
+              Close
+            </button>
+          </div>
+          {document.missing.length > 0 && <p className="muted">Still to decide: {document.missing.join(', ')}.</p>}
+        </div>
       )}
       {handoff !== undefined && (
         <div aria-label="Import handoff notes">
